@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evalytics.local/schemas/question.create.schema.json",
+  "title": "QuestionCreateInput",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "question_text": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 300
+    },
+    "question_type": {
+      "type": "string",
+      "enum": ["rating_scale", "text_response"]
+    },
+    "is_required": {
+      "type": "boolean",
+      "default": false
+    },
+    "category": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 100
+    }
+  },
+  "required": ["question_text", "question_type", "category"]
+}
