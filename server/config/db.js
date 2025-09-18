@@ -1,37 +1,58 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+const path = require('path');
+const dotenv = require('dotenv');
 
-// Allow DB_PASS or DB_PASSWORD
+// Load environment variables from .env file in the server directory
+const envPath = path.resolve(__dirname, '../.env');
+dotenv.config({ path: envPath });
+
+// Allow DB_PASS or DB_PASSWORD environment variable
 const DB_PASSWORD = process.env.DB_PASS || process.env.DB_PASSWORD;
 
-// Validate required environment variables
-const requiredEnv = {
-  DB_HOST: process.env.DB_HOST,
-  DB_PORT: process.env.DB_PORT,
-  DB_USER: process.env.DB_USER,
-  DB_PASSWORD,
-  DB_NAME: process.env.DB_NAME,
-};
+// SSL flags via environment
+const DB_SSL = String(process.env.DB_SSL || '').toLowerCase() === 'true';
+const DB_SSL_REJECT_UNAUTHORIZED = String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true';
 
-const missing = Object.entries(requiredEnv)
-  .filter(([, v]) => v === undefined || v === null || String(v).trim() === '')
-  .map(([k]) => k);
-
-if (missing.length) {
-  console.error('❌ Missing required environment variables:', missing.join(', '));
-  process.exit(1);
-}
-
-const pool = new Pool({
+// Database configuration
+const dbConfig = {
   host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT, 10),
+  port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5432,
   user: process.env.DB_USER,
   password: DB_PASSWORD,
   database: process.env.DB_NAME,
+  // Connection timeout of 5 seconds
   connectionTimeoutMillis: 5000,
+  // Maximum number of clients the pool should contain
+  max: 20,
+  // Maximum time (in milliseconds) a client can remain in the pool
   idleTimeoutMillis: 30000,
-  max: 10,
+  // SSL configuration is now explicit
+  ssl: DB_SSL ? { rejectUnauthorized: DB_SSL_REJECT_UNAUTHORIZED } : false,
+};
+
+// Log database configuration (without sensitive data)
+console.log('Database Configuration:', {
+  host: dbConfig.host,
+  port: dbConfig.port,
+  user: dbConfig.user,
+  database: dbConfig.database,
+  max: dbConfig.max,
+  ssl: DB_SSL ? `enabled (rejectUnauthorized=${DB_SSL_REJECT_UNAUTHORIZED})` : 'disabled'
 });
+
+// Validate required configuration
+const requiredConfig = ['host', 'port', 'user', 'password', 'database'];
+const missingConfig = requiredConfig
+  .filter(key => !dbConfig[key])
+  .map(key => `DB_${key.toUpperCase()}`);
+
+if (missingConfig.length > 0) {
+  console.error('❌ Missing required database configuration:', missingConfig.join(', '));
+  process.exit(1);
+}
+
+// Create a new pool using the configuration
+const pool = new Pool(dbConfig);
 
 // Test the database connection once on startup
 async function testConnection() {

@@ -50,25 +50,27 @@ export default function LoginPage() {
 
       alert('Login successful!');
 
-      // Prefer backend-provided role if present; fallback to selected role
-      const userRole = (data?.data?.user?.role || formData.role || '').toLowerCase();
-      switch (userRole) {
-        case 'admin':
-          navigate('/admin/dashboard');
-          break;
-        case 'student':
-          navigate('/student');
-          break;
-        case 'faculty':
-        case 'professor':
-          navigate('/professor/dashboard');
-          break;
-        case 'supervisor':
-          navigate('/supervisor/dashboard');
-          break;
-        default:
-          // Generic fallback
-          navigate('/');
+      // Prefer backend-provided userType/role; route by userType first (admins may have null role)
+      const userType = (data?.data?.user?.user_type ?? data?.data?.user?.userType ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+      const userRole = (data?.data?.user?.role ?? formData.role ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+      if (userType === 'admin') {
+        navigate('/admin/dashboard');
+      } else if (userRole === 'student') {
+        navigate('/student');
+      } else if (userRole === 'faculty' || userRole === 'professor') {
+        navigate('/professor/dashboard');
+      } else if (userRole === 'supervisor') {
+        navigate('/supervisor/dashboard');
+      } else {
+        // Generic fallback
+        navigate('/');
       }
     } catch (err) {
       alert('Network error during login. Please try again.');

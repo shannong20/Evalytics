@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 // Backend API base URL
 const API_BASE = (import.meta as any)?.env?.VITE_SERVER_URL || 'http://localhost:5000';
 
-const DEPARTMENTS = [
+// Static department names per requirement
+const STATIC_DEPARTMENTS = [
   'College of Agriculture',
   'College of Arts and Sciences',
   'College of Community Health and Allied Medical Sciences',
@@ -17,25 +18,32 @@ const DEPARTMENTS = [
   'College of Fisheries',
 ];
 
+// const department = query to get listDepartments() from @departmentServices.js then modify line 240 to replace STATIC_DEPARTMENTS.
+
 export default function SignUpForm() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
+    middleInitial: '',
     email: '',
-    username: '',
     password: '',
     confirmPassword: '',
-    role: '', // Default role
-    department: '',
+    userType: 'user', // 'admin' | 'user'
+    role: '',     // when userType === 'user': 'faculty' | 'student' | 'supervisor'
+    departmentId: null,
+    departmentName: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const roleRequiresDepartment = useMemo(() => {
+    if (formData.userType !== 'user') return false;
     const r = (formData.role || '').toLowerCase();
-    return r === 'faculty' || r === 'supervisor';
-  }, [formData.role]);
+    return r === 'student' || r === 'faculty' || r === 'supervisor';
+  }, [formData.userType, formData.role]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // No remote fetch; we use a fixed list of departments
+
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
     if (submitting) return;
 
@@ -45,12 +53,17 @@ export default function SignUpForm() {
       return;
     }
 
-    if (!formData.role) {
+    if (!formData.userType) {
+      alert('Please select a user type');
+      return;
+    }
+
+    if (formData.userType === 'user' && !formData.role) {
       alert('Please select a role');
       return;
     }
 
-    if (roleRequiresDepartment && !formData.department) {
+    if (roleRequiresDepartment && !formData.departmentName) {
       alert('Please select a department');
       return;
     }
@@ -58,14 +71,21 @@ export default function SignUpForm() {
     try {
       setSubmitting(true);
       // Map to backend expected fields
-      const payload = {
-        firstname: formData.firstName,
-        lastname: formData.lastName,
+      const payload: any = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        middleInitial: formData.middleInitial || undefined,
         email: formData.email,
         password: formData.password,
-        role: (formData.role || '').trim().toLowerCase(),
-        department: formData.department || null,
+        userType: 'user',
+        role: formData.userType === 'user' ? (formData.role || '').trim().toLowerCase() : undefined,
+        departmentId: formData.departmentId || 0, //must replace this with correct logic
+        departmentName: formData.departmentName || undefined,
       };
+
+      // Debug: validate payload before sending (mask password)
+      const debugPayload = { ...payload, password: payload.password ? '***' : undefined };
+      console.log('Signup Payload:', debugPayload);
 
       const res = await fetch(`${API_BASE}/api/v1/auth/signup`, {
         method: 'POST',
@@ -74,6 +94,7 @@ export default function SignUpForm() {
       });
 
       const data = await res.json().catch(() => ({}));
+      console.log('Signup Response:', res.status, data);
 
       if (!res.ok) {
         const message = (data && (data.message || data.error)) || 'Sign up failed. Please try again.';
@@ -91,12 +112,26 @@ export default function SignUpForm() {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: any) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => {
+      const next: any = { ...prev, [name]: value };
+      // If switching to admin, clear role and department
+      if (name === 'userType') {
+        if (value !== 'user') {
+          next.role = '';
+          next.departmentName = '';
+        }
+      }
+      // If role becomes empty, clear department
+      if (name === 'role') {
+        const r = (value || '').toLowerCase();
+        if (!r) {
+          next.departmentName = '';
+        }
+      }
+      return next;
+    });
   };
 
   return (
@@ -115,7 +150,18 @@ export default function SignUpForm() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  name="lastName"
+                  type="text"
+                  required
+                  value={formData.lastName}
+                  onChange={handleChange}
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="firstName">First Name</Label>
                 <Input
@@ -128,13 +174,13 @@ export default function SignUpForm() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
+                <Label htmlFor="middleInitial">Middle Initial</Label>
                 <Input
-                  id="lastName"
-                  name="lastName"
+                  id="middleInitial"
+                  name="middleInitial"
                   type="text"
-                  required
-                  value={formData.lastName}
+                  maxLength={1}
+                  value={formData.middleInitial}
                   onChange={handleChange}
                 />
               </div>
@@ -152,50 +198,61 @@ export default function SignUpForm() {
               />
             </div>
             
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                name="username"
-                type="text"
-                required
-                value={formData.username}
-                onChange={handleChange}
-              />
+            {/* User Type and Role */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                {/* <Label htmlFor="userType">User Type</Label>
+                <select
+                  id="userType"
+                  name="userType"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={formData.userType}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="" disabled>Select user type</option>
+                  <option value="admin">Admin</option>
+                  <option value="user">User</option>
+                </select> */}
+              {/* </div>
+              <div className="space-y-2"> */}
+                <Label htmlFor="role">Role</Label>
+                <select
+                  id="role"
+                  name="role"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={formData.role}
+                  onChange={handleChange}
+                  disabled={formData.userType !== 'user'}
+                  required={formData.userType === 'user'}
+                >
+                  <option value="" disabled>{formData.userType === 'user' ? 'Select role' : 'N/A for Admin'}</option>
+                  <option value="student">Student</option>
+                  <option value="faculty">Faculty</option>
+                  <option value="supervisor">Supervisor</option>
+                </select>
+              </div>
             </div>
             
-            <div className="space-y-2">
-              <Label htmlFor="role">I am a</Label>
-              <select
-                id="role"
-                name="role"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                value={formData.role}
-                onChange={handleChange}
-              >
-                <option value="" disabled>Select role</option>
-                <option value="student">Student</option>
-                <option value="faculty">Faculty</option>
-                <option value="supervisor">Supervisor</option>
-              </select>
-            </div>
+            
             
             <div className="space-y-2">
-              <Label htmlFor="department">Department</Label>
+              <Label htmlFor="departmentName">Department</Label>
               <select
-                id="department"
-                name="department"
-                className={`flex h-10 w-full rounded-md border ${roleRequiresDepartment && !formData.department ? 'border-red-500' : 'border-input'} bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
-                value={formData.department}
+                id="departmentName"
+                name="departmentName"
+                className={`flex h-10 w-full rounded-md border ${roleRequiresDepartment && !formData.departmentName ? 'border-red-500' : 'border-input'} bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+                value={formData.departmentName}
                 onChange={handleChange}
+                disabled={formData.userType !== 'user'}
               >
-                <option value="">Select department</option>
-                {DEPARTMENTS.map((dept) => (
-                  <option key={dept} value={dept}>{dept}</option>
+                <option value="">{formData.userType !== 'user' ? 'N/A for Admin' : 'Select department'}</option>
+                {STATIC_DEPARTMENTS.map((name) => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
               </select>
-              {roleRequiresDepartment && !formData.department && (
-                <p className="text-xs text-red-600">Department is required for Faculty and Supervisor roles.</p>
+              {formData.userType === 'user' && roleRequiresDepartment && !formData.departmentName && (
+                <p className="text-xs text-red-600">Department is required for Student, Faculty, and Supervisor roles.</p>
               )}
             </div>
             

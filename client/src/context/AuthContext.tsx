@@ -2,10 +2,15 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 
 export type AuthUser = {
   id: number; // normalized from backend user.user_id
-  role: string;
   email?: string;
-  firstname?: string;
-  lastname?: string;
+  // normalized name fields for UI
+  firstName?: string;
+  lastName?: string;
+  middleInitial?: string;
+  // access fields
+  userType?: string; // 'admin' | 'user'
+  role?: string;     // 'faculty' | 'student' | 'supervisor' (when userType === 'user')
+  departmentId?: number | null;
   // Raw record from backend if needed
   raw?: any;
 };
@@ -23,8 +28,9 @@ const AuthContext = createContext(null as unknown as AuthState);
 const STORAGE_KEY = 'auth';
 
 export function AuthProvider({ children }: { children: any }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  // Avoid generic type args to minimize TS friction in this project setup
+  const [user, setUser] = useState(null as unknown as AuthUser | null);
+  const [token, setToken] = useState(null as unknown as string | null);
 
   // Load initial state from localStorage
   useEffect(() => {
@@ -37,10 +43,13 @@ export function AuthProvider({ children }: { children: any }) {
           const normalized: AuthUser | null = backendUser
             ? {
                 id: Number(backendUser.user_id ?? backendUser.id),
-                role: backendUser.role,
                 email: backendUser.email,
-                firstname: backendUser.firstname,
-                lastname: backendUser.lastname,
+                firstName: backendUser.first_name ?? backendUser.firstname,
+                lastName: backendUser.last_name ?? backendUser.lastname,
+                middleInitial: backendUser.middle_initial ?? backendUser.middleInitial,
+                userType: backendUser.user_type ?? backendUser.userType,
+                role: backendUser.role,
+                departmentId: backendUser.department_id ?? backendUser.departmentId ?? null,
                 raw: backendUser,
               }
             : null;
@@ -61,10 +70,13 @@ export function AuthProvider({ children }: { children: any }) {
     const backendUser = next.user;
     const normalized: AuthUser = {
       id: Number(backendUser.user_id ?? backendUser.id),
-      role: backendUser.role,
       email: backendUser.email,
-      firstname: backendUser.firstname,
-      lastname: backendUser.lastname,
+      firstName: backendUser.first_name ?? backendUser.firstname,
+      lastName: backendUser.last_name ?? backendUser.lastname,
+      middleInitial: backendUser.middle_initial ?? backendUser.middleInitial,
+      userType: backendUser.user_type ?? backendUser.userType,
+      role: backendUser.role,
+      departmentId: backendUser.department_id ?? backendUser.departmentId ?? null,
       raw: backendUser,
     };
     setUser(normalized);

@@ -13,6 +13,7 @@ import Notifications from './src/components/Notifications';
 import Settings from './src/components/Settings';
 import FullEvaluationForm from './src/components/evaluation/FullEvaluationForm';
 import FacultyEvaluationFlow from './src/components/evaluation/FacultyEvaluationFlow';
+import ProfileEdit from './src/components/ProfileEdit';
 
 // Student Components
 import StudentLayout from './src/components/student/StudentLayout';
@@ -44,6 +45,9 @@ export default function App() {
             <Route index element={<Navigate to="login" replace />} />
           </Route>
           <Route path="/" element={<Navigate to="/auth/login" replace />} />
+
+          {/* Profile */}
+          <Route path="/profile" element={<ProfileEdit />} />
 
           {/* Full Evaluation Route (rating-only, all categories) */}
           <Route path="/full-evaluation" element={<FullEvaluationForm />} />

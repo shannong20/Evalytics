@@ -1,37 +1,13 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
-const { query } = require('../config/db');
-const userService = require('../services/userService');
+const userService = require('../services/userService.new');
+const departmentService = require('../services/departmentService');
+const { USER_TYPES, USER_ROLES } = userService;
 
-// User types and their allowed roles
-const USER_TYPES = {
-  ADMIN: 'admin',
-  USER: 'user'
-};
-
-const USER_ROLES = {
-  FACULTY: 'faculty',
-  STUDENT: 'student',
-  SUPERVISOR: 'supervisor'
-};
-
-// Cache whether the users.department column exists to avoid repeated lookups
-let hasDepartmentColumn;
-async function ensureDepartmentColumnChecked() {
-  if (typeof hasDepartmentColumn === 'boolean') return hasDepartmentColumn;
-  try {
-    const check = await query(
-      "SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'department' LIMIT 1"
-    );
-    hasDepartmentColumn = check && check.rowCount > 0;
-  } catch (e) {
-    // If the check fails, assume column does not exist to avoid breaking signup
-    hasDepartmentColumn = false;
-  }
-  return hasDepartmentColumn;
-}
-
+/**
+ * Sign up a new user
+ * @route POST /api/auth/signup
+ */
 const signup = async (req, res) => {
   const { 
     firstName, 
@@ -41,7 +17,8 @@ const signup = async (req, res) => {
     password, 
     userType = USER_TYPES.USER, 
     role, 
-    departmentId = null 
+    departmentId = null,
+    departmentName
   } = req.body;
 
   // Validate request body
@@ -54,8 +31,18 @@ const signup = async (req, res) => {
     });
   }
 
-  // Validate user type and role
-  if (!Object.values(USER_TYPES).includes(userType)) {
+  // Normalize input to lowercase for validation
+  const toLc = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+  const userTypeLc = toLc(userType);
+  const roleLc = toLc(role);
+  // Sanitize middleInitial: trim spaces, take first char, or set to null
+  const cleanMiddleInitial = (typeof middleInitial === 'string' ? middleInitial.trim().slice(0, 1) : '') || null;
+  // Build lowercase-allowed sets derived from service enums (handles mixed-case constants)
+  const ALLOWED_TYPES_LC = Object.values(USER_TYPES).map(v => (typeof v === 'string' ? v.toLowerCase() : v));
+  const ALLOWED_ROLES_LC = Object.values(USER_ROLES).map(v => (typeof v === 'string' ? v.toLowerCase() : v));
+
+  // Validate user type using lowercase enums derived from constants
+  if (!ALLOWED_TYPES_LC.includes(userTypeLc)) {
     return res.status(400).json({
       status: 'error',
       message: 'Invalid user type',
@@ -63,13 +50,24 @@ const signup = async (req, res) => {
     });
   }
 
-  // Normalize role
-  const normalizedRole = role ? role.toLowerCase() : '';
-  if (userType === USER_TYPES.USER && !Object.values(USER_ROLES).includes(normalizedRole)) {
+  // Validate role only when userType is 'user'
+  if (userTypeLc === 'user' && !ALLOWED_ROLES_LC.includes(roleLc)) {
     return res.status(400).json({
       status: 'error',
       message: 'Invalid role for user type',
       validRoles: Object.values(USER_ROLES)
+    });
+  }
+
+  // Enforce department for applicable roles (student/faculty/supervisor)
+  if (
+    userTypeLc === 'user' &&
+    ['student', 'faculty', 'supervisor'].includes(roleLc) &&
+    !departmentId && !departmentName
+  ) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Department is required for the selected role'
     });
   }
 
@@ -83,16 +81,48 @@ const signup = async (req, res) => {
       });
     }
 
+    // Resolve departmentId if departmentName provided
+    console.log('[AUTH] Signup received payload (safe):', {
+      firstName,
+      lastName,
+      middleInitial: cleanMiddleInitial ? '*' : '',
+      email,
+      userType: userTypeLc,
+      role: roleLc,
+      departmentId,
+      departmentName,
+    });
+    let resolvedDepartmentId = departmentId;
+    if (!resolvedDepartmentId && departmentName) {
+      const dep = await departmentService.findDepartmentByName(departmentName);
+      if (!dep) {
+        return res.status(400).json({ status: 'error', message: 'Invalid department name' });
+      }
+      resolvedDepartmentId = dep.department_id;
+    }
+    console.log('[AUTH] Signup resolved department:', {
+      providedDepartmentId: departmentId,
+      providedDepartmentName: departmentName,
+      resolvedDepartmentId,
+    });
+
+    // Map userType/role to DB-required capitalization right before insert
+    // Example: 'user' -> 'User', 'faculty' -> 'Faculty'
+    const TYPE_MAP = { admin: 'Admin', user: 'User' };
+    const ROLE_MAP = { faculty: 'Faculty', student: 'Student', supervisor: 'Supervisor' };
+    const dbUserType = TYPE_MAP[userTypeLc] || 'User';
+    const dbRole = userTypeLc === 'user' ? (ROLE_MAP[roleLc] || null) : null;
+
     // Create new user
     const newUser = await userService.createUser({
       firstName,
       lastName,
-      middleInitial,
+      middleInitial: cleanMiddleInitial,
       email,
       password,
-      userType,
-      role: normalizedRole,
-      departmentId
+      userType: dbUserType,
+      role: dbRole,
+      departmentId: resolvedDepartmentId
     });
 
     // Generate JWT token
@@ -122,25 +152,56 @@ const signup = async (req, res) => {
           userType: newUser.user_type,
           role: newUser.role,
           departmentId: newUser.department_id,
-          isActive: newUser.is_active
+          isActive: newUser.is_active ?? true
         }
       }
     });
   } catch (error) {
+    // Gracefully handle common DB errors
+    // 23505: unique_violation, 23503: foreign_key_violation, 23514: check_violation, 23502: not_null_violation
+    if (error && error.code === '23505') {
+      return res.status(409).json({ 
+        status: 'error', 
+        message: 'Email already in use',
+        dbError: { code: error.code, message: error.message, detail: error.detail, constraint: error.constraint, schema: error.schema, table: error.table }
+      });
+    }
+    if (error && error.code === '23503') {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'Invalid department reference',
+        dbError: { code: error.code, message: error.message, detail: error.detail, constraint: error.constraint, schema: error.schema, table: error.table }
+      });
+    }
+    if (error && error.code === '23514') {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'Invalid userType or role',
+        dbError: { code: error.code, message: error.message, detail: error.detail, constraint: error.constraint, schema: error.schema, table: error.table }
+      });
+    }
+    if (error && error.code === '23502') {
+      // NOT NULL violation (likely department_id is NOT NULL in schema)
+      return res.status(400).json({
+        status: 'error',
+        message: 'Database requires a non-null value for a field',
+        hint: 'If this is about department_id for Admin, either supply a department or alter the DB to allow NULL for Admin users.',
+        dbError: { code: error.code, message: error.message, detail: error.detail, column: error.column, constraint: error.constraint, schema: error.schema, table: error.table }
+      });
+    }
     console.error('Signup error:', error);
     return res.status(500).json({
       status: 'error',
       message: 'Internal server error during signup',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      dbError: process.env.NODE_ENV !== 'production' ? { code: error.code, message: error.message, detail: error.detail, constraint: error.constraint, schema: error.schema, table: error.table } : undefined
     });
   }
-
-  // Minimal log for diagnostics (no sensitive data)
-  try {
-    console.log(`Signup: created user ${newUser.rows[0].email} with role ${newUser.rows[0].role}`);
-  } catch {}
 };
 
+/**
+ * Log in a user
+ * @route POST /api/auth/login
+ */
 const login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -165,8 +226,8 @@ const login = async (req, res) => {
       });
     }
 
-    // Check if user is active
-    if (!user.is_active) {
+    // Check if user is active (only if the column exists in the current schema)
+    if (Object.prototype.hasOwnProperty.call(user, 'is_active') && user.is_active === false) {
       return res.status(403).json({
         status: 'error',
         message: 'Account is deactivated. Please contact an administrator.'
@@ -174,7 +235,8 @@ const login = async (req, res) => {
     }
 
     // Verify password
-    const isMatch = await bcrypt.compare(password, user.password_hash);
+    const bcrypt = require('bcryptjs');
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ 
         status: 'error',
@@ -228,7 +290,10 @@ const login = async (req, res) => {
   }
 };
 
-// Get current user's profile
+/**
+ * Get current user's profile
+ * @route GET /api/auth/me
+ */
 const getProfile = async (req, res) => {
   try {
     const userId = req.user.id; // From JWT middleware
@@ -255,13 +320,44 @@ const getProfile = async (req, res) => {
   }
 };
 
-// Update user profile
+/**
+ * Update user profile
+ * @route PATCH /api/auth/me
+ */
 const updateProfile = async (req, res) => {
   const userId = req.user.id; // From JWT middleware
-  const updates = req.body;
+  const updates = { ...req.body };
+  // Allow departmentName to be passed and translated into department_id
+  const incomingDeptName = updates.departmentName || updates.department_name;
+  if (incomingDeptName && !updates.department_id) {
+    try {
+      const dep = await departmentService.findDepartmentByName(incomingDeptName);
+      if (!dep) {
+        return res.status(400).json({ status: 'error', message: 'Invalid department name' });
+      }
+      updates.department_id = dep.department_id;
+    } catch (e) {
+      console.error('Department lookup error:', e);
+      return res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+  }
+  // Safe log of updates
+  const safeUpdates = { ...updates };
+  if (safeUpdates.password) safeUpdates.password = '***';
+  console.log('[AUTH] Update profile received (safe):', safeUpdates);
+  
+  // Remove restricted fields
+  const { password, userType, role, ...allowedUpdates } = updates;
+  
+  if (Object.keys(allowedUpdates).length === 0) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'No valid fields to update'
+    });
+  }
   
   try {
-    const updatedUser = await userService.updateUser(userId, updates);
+    const updatedUser = await userService.updateUser(userId, allowedUpdates);
     
     if (!updatedUser) {
       return res.status(404).json({
@@ -285,7 +381,10 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// Change password
+/**
+ * Change user password
+ * @route POST /api/auth/change-password
+ */
 const changePassword = async (req, res) => {
   const userId = req.user.id;
   const { currentPassword, newPassword } = req.body;
@@ -310,6 +409,7 @@ const changePassword = async (req, res) => {
     }
     
     // Verify current password
+    const bcrypt = require('bcryptjs');
     const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({

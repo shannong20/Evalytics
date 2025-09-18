@@ -1,5 +1,10 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Load environment variables from the server/.env explicitly
+const envPath = path.resolve(__dirname, '.env');
+dotenv.config({ path: envPath });
 
 // Allow DB_PASS or DB_PASSWORD
 const DB_PASSWORD = process.env.DB_PASS || process.env.DB_PASSWORD;
@@ -23,13 +28,17 @@ if (missing.length) {
   process.exit(1);
 }
 
+const DB_SSL = String(process.env.DB_SSL || '').toLowerCase() === 'true';
+const DB_SSL_REJECT_UNAUTHORIZED = String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true';
+
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port,
-  user: process.env.DB_USER,
-  password: DB_PASSWORD,
-  database: process.env.DB_NAME,
-  connectionTimeoutMillis: 5000,
+  host: requiredEnv.DB_HOST,
+  port: port,
+  user: requiredEnv.DB_USER,
+  password: requiredEnv.DB_PASSWORD,
+  database: requiredEnv.DB_NAME,
+  ssl: DB_SSL ? { rejectUnauthorized: DB_SSL_REJECT_UNAUTHORIZED } : false,
+  connectionTimeoutMillis: 5000, // 5 seconds
 });
 
 async function testConnection() {
