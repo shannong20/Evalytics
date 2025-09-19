@@ -4,28 +4,79 @@ import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import EvaluateProfessors from '../student/EvaluateProfessors';
+import { useAuth } from '../../context/AuthContext';
+import { buildApiUrl } from '../../lib/api';
 
-// Step 1 – Department Selection (fixed list per requirements)
-const DEPARTMENTS = [
-  'College of Agriculture',
-  'College of Arts and Sciences',
-  'College of Community Health and Allied Medical Sciences',
-  'College of Computer Science',
-  'College of Education',
-  'College of Fisheries',
-] as const;
-
+// Departments are loaded dynamically from the backend
+type DepartmentItem = { department_id: string; name: string };
 type FacultyItem = { id: string; full_name: string; email?: string | null };
-const API_BASE = (import.meta as any)?.env?.VITE_SERVER_URL || 'http://localhost:5000';
 
 export default function FacultyEvaluationFlow() {
+  const { token } = useAuth();
   const [step, setStep] = useState(1 as 1 | 2 | 3);
+  const [departmentId, setDepartmentId] = useState('');
   const [department, setDepartment] = useState('');
+  const [departments, setDepartments] = useState([] as DepartmentItem[]);
+  const [loadingDepts, setLoadingDepts] = useState(false);
+  const [deptError, setDeptError] = useState(null as string | null);
   const [facultyId, setFacultyId] = useState('');
   const [facultyName, setFacultyName] = useState('');
   const [facultyOptions, setFacultyOptions] = useState([] as FacultyItem[]);
   const [loadingFaculty, setLoadingFaculty] = useState(false);
   const [facultyError, setFacultyError] = useState(null as string | null);
+
+  // Load departments on mount
+  useEffect(() => {
+    let ignore = false;
+    async function loadDepartments() {
+      setDeptError(null);
+      setLoadingDepts(true);
+      try {
+        // Try public endpoint first
+        let items: DepartmentItem[] = [];
+        let ok = false;
+        try {
+          const res = await fetch(buildApiUrl('/api/v1/departments/public'));
+          const data = await res.json().catch(() => []);
+          ok = res.ok;
+          if (res.ok) {
+            items = Array.isArray(data)
+              ? data as DepartmentItem[]
+              : Array.isArray((data as any)?.data)
+                ? (data as any).data as DepartmentItem[]
+                : [];
+          }
+        } catch {}
+
+        // Fallback to root endpoint if public is unavailable
+        if (!ok || items.length === 0) {
+          const res2 = await fetch(buildApiUrl('/api/v1/departments'));
+          const data2 = await res2.json().catch(() => []);
+          if (!ignore && res2.ok) {
+            items = Array.isArray(data2)
+              ? data2 as DepartmentItem[]
+              : Array.isArray((data2 as any)?.data)
+                ? (data2 as any).data as DepartmentItem[]
+                : [];
+            ok = true;
+          }
+        }
+
+        if (ignore) return;
+        if (!ok) {
+          setDeptError('Failed to load departments');
+          return;
+        }
+        setDepartments(items);
+      } catch (_e) {
+        if (!ignore) setDeptError('Network error while loading departments');
+      } finally {
+        if (!ignore) setLoadingDepts(false);
+      }
+    }
+    loadDepartments();
+    return () => { ignore = true; };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -33,21 +84,33 @@ export default function FacultyEvaluationFlow() {
       setFacultyError(null);
       setFacultyOptions([]);
       setFacultyName('');
-      if (!department) return;
+      if (!departmentId) return;
       setLoadingFaculty(true);
       try {
-        const url = `${API_BASE}/api/users/faculty?department=${encodeURIComponent(department)}`;
-        const res = await fetch(url);
+        const url = buildApiUrl(`/api/v1/users/faculty?departmentId=${encodeURIComponent(departmentId)}`);
+        const res = await fetch(url, {
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            'Content-Type': 'application/json',
+          },
+        });
         const data = await res.json().catch(() => ({}));
         if (ignore) return;
         if (!res.ok) {
-          const message = (data && (data.message || data.error?.message)) || 'Failed to load faculty list';
+          const errMsg = (data && ((data as any).message || (data as any).error?.message)) || '';
+          const message = `Failed to load faculty list${res.status ? ` (${res.status})` : ''}${errMsg ? ` - ${errMsg}` : ''}`;
+          console.error('Faculty fetch failed', { status: res.status, statusText: res.statusText, data });
           setFacultyError(message);
           return;
         }
-        const items: FacultyItem[] = Array.isArray(data?.data) ? data.data : [];
+        const items: FacultyItem[] = Array.isArray((data as any)?.data?.faculty)
+          ? (data as any).data.faculty
+          : Array.isArray((data as any)?.data)
+            ? (data as any).data
+            : [];
         setFacultyOptions(items);
       } catch (e) {
+        console.error('Faculty fetch network error', e);
         if (!ignore) setFacultyError('Network error while loading faculty');
       } finally {
         if (!ignore) setLoadingFaculty(false);
@@ -55,9 +118,9 @@ export default function FacultyEvaluationFlow() {
     }
     loadFaculty();
     return () => { ignore = true; };
-  }, [department]);
+  }, [departmentId, token]);
 
-  const canNextFromDept = !!department;
+  const canNextFromDept = !!departmentId;
   const canNextFromFaculty = !!facultyId;
 
   return (
@@ -97,16 +160,35 @@ export default function FacultyEvaluationFlow() {
           </CardHeader>
           <CardContent>
             <div className="max-w-md">
-              <Select value={department} onValueChange={(v) => { setDepartment(v); setFacultyName(''); }}>
+              <Select
+                value={departmentId}
+                onValueChange={(id) => {
+                  setDepartmentId(id);
+                  const dep = departments.find(d => String(d.department_id) === id);
+                  setDepartment(dep?.name || '');
+                  setFacultyName('');
+                  setFacultyId('');
+                }}
+                disabled={loadingDepts || !!deptError}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a department" />
+                  <SelectValue placeholder={
+                    loadingDepts
+                      ? 'Loading departments...'
+                      : deptError
+                        ? 'Failed to load departments'
+                        : 'Select a department'
+                  } />
                 </SelectTrigger>
                 <SelectContent>
-                  {DEPARTMENTS.map((d) => (
-                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={String(d.department_id)} value={String(d.department_id)}>{d.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {deptError && (
+                <p className="text-sm text-red-600 mt-2">{deptError}</p>
+              )}
             </div>
             <div className="mt-6 flex justify-end">
               <Button onClick={() => setStep(2)} disabled={!canNextFromDept} className="min-w-32">Next</Button>

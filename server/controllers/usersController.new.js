@@ -233,30 +233,57 @@ const deleteUser = async (req, res) => {
 };
 
 /**
- * List faculty members with department filter
+ * List faculty members with optional department filter
+ * Accepts:
+ *  - departmentId: number (preferred)
  * @route GET /api/users/faculty
  */
 const listFaculty = async (req, res) => {
   try {
     const { departmentId } = req.query;
-    
+    const depId = departmentId ? parseInt(departmentId, 10) : undefined;
+    console.log('listFaculty query', { departmentId, depId, role: USER_ROLES.FACULTY });
+
     const faculty = await userService.listUsers({
-      userType: USER_TYPES.USER,
       role: USER_ROLES.FACULTY,
-      departmentId: departmentId || undefined,
-      isActive: true
+      departmentId: depId
     });
+    
+    console.log('listFaculty result:', { count: faculty?.length, sample: faculty?.[0] });
+
+    // Normalize/shape for frontend convenience
+    const normalized = (faculty || []).map((u) => ({
+      id: String(u.user_id ?? u.id),
+      full_name: `${u.first_name ?? u.firstName ?? ''} ${u.last_name ?? u.lastName ?? ''}`.trim(),
+      email: u.email ?? null,
+      department: u.department_name ?? null,
+    }));
 
     return res.status(200).json({
       status: 'success',
-      data: { faculty }
+      data: { faculty: normalized }
     });
   } catch (error) {
-    console.error('List faculty error:', error);
+    console.error('List faculty error:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      hint: error.hint,
+      position: error.position,
+      where: error.where,
+      stack: error.stack,
+      query: error.query,
+      parameters: error.parameters
+    });
     return res.status(500).json({
       status: 'error',
       message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        code: error.code,
+        detail: error.detail,
+        hint: error.hint
+      } : undefined
     });
   }
 };

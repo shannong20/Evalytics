@@ -37,9 +37,19 @@ const validateUpdateUser = [
 // Apply authentication middleware to all routes
 router.use(authMiddleware.protect);
 
-// Apply admin middleware to all routes except GET /me
+// Apply admin middleware to all routes except certain safe GET endpoints for any authenticated user
 router.use((req, res, next) => {
-  if (req.method === 'GET' && req.path === '/' || req.path.endsWith('/me')) {
+  const isGet = req.method === 'GET';
+  const p = req.path || '';
+  if (
+    isGet && (
+      p === '/' ||
+      p.endsWith('/me') ||
+      p.endsWith('/faculty') ||
+      p.endsWith('/students') ||
+      p.endsWith('/supervisors')
+    )
+  ) {
     return next();
   }
   authMiddleware.restrictTo('admin')(req, res, next);
@@ -56,6 +66,11 @@ router.get('/', [
   body('offset').optional().isInt({ min: 0 }),
 ], usersController.listUsers);
 
+// Specialized routes for listing user types (must come BEFORE dynamic :id route)
+router.get('/faculty', usersController.listFaculty);
+router.get('/students', usersController.listStudents);
+router.get('/supervisors', usersController.listSupervisors);
+
 // Get a single user by ID
 router.get('/:id', validateUserId, usersController.getUser);
 
@@ -67,10 +82,5 @@ router.patch('/:id', validateUpdateUser, usersController.updateUser);
 
 // Delete a user (admin only, soft delete)
 router.delete('/:id', validateUserId, usersController.deleteUser);
-
-// Specialized routes for listing user types
-router.get('/faculty', usersController.listFaculty);
-router.get('/students', usersController.listStudents);
-router.get('/supervisors', usersController.listSupervisors);
 
 module.exports = router;

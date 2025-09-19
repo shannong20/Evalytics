@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
-import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Separator } from '../ui/separator';
@@ -32,8 +31,8 @@ export default function CategoryForm({ category, answers, onAnswerChange, onQues
         setError(null);
         const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
         const url = typeof formId === 'number'
-          ? `${baseUrl}/api/questions/public/form/${formId}`
-          : `${baseUrl}/api/questions/public?category=${encodeURIComponent(category)}`;
+          ? `${baseUrl}/api/v1/questions/public/form/${formId}`
+          : `${baseUrl}/api/v1/questions/public?category=${encodeURIComponent(category)}`;
         const res = await fetch(url);
         if (!res.ok) {
           throw new Error(`Failed to load questions for ${category}`);
@@ -46,7 +45,8 @@ export default function CategoryForm({ category, answers, onAnswerChange, onQues
             filtered = filtered.filter(q => q.category === category);
           }
           if (ratingOnly) {
-            filtered = filtered.filter(q => q.question_type === 'rating_scale');
+            // Default missing type to 'rating_scale'
+            filtered = filtered.filter(q => (q.question_type ?? 'rating_scale') === 'rating_scale');
           }
           if (typeof limit === 'number') {
             filtered = filtered.slice(0, Math.max(0, limit));
@@ -114,42 +114,32 @@ export default function CategoryForm({ category, answers, onAnswerChange, onQues
                   <span className="mr-2">{idx + 1}.</span>
                   <span>
                     {q.question_text}
-                    {q.is_required && <span className="text-red-500 ml-1">*</span>}
+                    <span className="text-red-500 ml-1">*</span>
                   </span>
                 </Label>
 
-                {q.question_type === 'rating_scale' ? (
-                  <RadioGroup
-                    value={answers[q.question_id]?.toString() || ''}
-                    onValueChange={(value) => onAnswerChange(q.question_id, value)}
-                  >
-                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
-                      {[1,2,3,4,5].map((rating) => {
-                        const selected = (answers[q.question_id]?.toString() || '') === rating.toString();
-                        return (
-                          <div key={rating} className="w-full">
-                            <RadioGroupItem value={rating.toString()} id={`${q.question_id}_${rating}`} className="sr-only" />
-                            <Label
-                              htmlFor={`${q.question_id}_${rating}`}
-                              className={`w-full inline-flex items-center justify-center px-3 py-2 rounded-md border text-sm cursor-pointer transition select-none ${selected ? 'bg-blue-50 border-blue-500 text-blue-700 font-medium' : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300'}`}
-                            >
-                              {rating === 1 ? '1 - Poor' : rating === 2 ? '2 - Fair' : rating === 3 ? '3 - Satisfactory' : rating === 4 ? '4 - Very Satisfactory' : '5 - Outstanding'}
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    
-                  </RadioGroup>
-                ) : (
-                  <div className="mt-2">
-                    <Input
-                      value={answers[q.question_id]?.toString() || ''}
-                      onChange={(e) => onAnswerChange(q.question_id, e.target.value)}
-                      placeholder="Type your answer"
-                    />
+                <RadioGroup
+                  value={answers[q.question_id]?.toString() || ''}
+                  onValueChange={(value) => onAnswerChange(q.question_id, value)}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                    {[1,2,3,4,5].map((rating) => {
+                      const selected = (answers[q.question_id]?.toString() || '') === rating.toString();
+                      return (
+                        <div key={rating} className="w-full">
+                          <RadioGroupItem value={rating.toString()} id={`${q.question_id}_${rating}`} className="sr-only" />
+                          <Label
+                            htmlFor={`${q.question_id}_${rating}`}
+                            className={`w-full inline-flex items-center justify-center px-3 py-2 rounded-md border text-sm cursor-pointer transition select-none ${selected ? 'bg-blue-50 border-blue-500 text-blue-700 font-medium' : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300'}`}
+                          >
+                            {rating === 1 ? '1 - Poor' : rating === 2 ? '2 - Fair' : rating === 3 ? '3 - Satisfactory' : rating === 4 ? '4 - Very Satisfactory' : '5 - Outstanding'}
+                          </Label>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
+                  
+                </RadioGroup>
 
                 {idx < questions.length - 1 && <Separator />}
               </div>

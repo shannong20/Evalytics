@@ -5,7 +5,7 @@ import { Badge } from '../ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
 import CategoryForm, { type AnswerMap } from '../evaluation/CategoryForm';
-import type { QuestionRecord } from '../../types/question';
+import type { QuestionRecord, CategoryRecord } from '../../types/question';
 import { useAuth } from '../../context/AuthContext';
 
 type Faculty = {
@@ -14,14 +14,7 @@ type Faculty = {
   email?: string;
 };
 
-const CATEGORIES = [
-  'Commitment',
-  'Knowledge of Subject',
-  'Teaching for Independent Learning',
-  'Management for Learning',
-] as const;
-
-type CategoryKey = typeof CATEGORIES[number];
+type CategoryKey = string;
 
 type EvaluateProfessorsProps = {
   prefilledProfessorName?: string;
@@ -35,17 +28,13 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
   // TODO: Make this dynamic or configurable via admin
   const FORM_ID = Number(((import.meta as any).env?.VITE_EVALUATION_FORM_ID)) || 1;
   const { user, token } = useAuth();
-  const [facultyId, setFacultyId] = useState<number | null>(null);
-  const [facultyList, setFacultyList] = useState<Faculty[]>([]);
+  const [facultyId, setFacultyId] = useState(null as number | null);
+  const [facultyList, setFacultyList] = useState([] as Faculty[]);
   const [isLoadingFaculty, setIsLoadingFaculty] = useState(true);
   const [answers, setAnswers] = useState({} as AnswerMap);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [questionsByCategory, setQuestionsByCategory] = useState({
-    'Commitment': [],
-    'Knowledge of Subject': [],
-    'Teaching for Independent Learning': [],
-    'Management for Learning': [],
-  } as Record<CategoryKey, QuestionRecord[]>);
+  const [categories, setCategories] = useState([] as CategoryRecord[]);
+  const [questionsByCategory, setQuestionsByCategory] = useState({} as Record<CategoryKey, QuestionRecord[]>);
 
   // When a faculty is pre-selected (e.g., by a parent flow), honor it
   useEffect(() => {
@@ -59,7 +48,11 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
     const fetchFaculty = async () => {
       try {
         const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
-        const response = await fetch(`${baseUrl}/api/users/faculty/joined`);
+        const response = await fetch(`${baseUrl}/api/v1/users/faculty`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
         if (response.ok) {
           const payload = await response.json();
           const items = Array.isArray(payload?.data)
@@ -88,34 +81,49 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
     fetchFaculty();
   }, []);
 
+  // Load categories once
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const res = await fetch(`${baseUrl}/api/v1/categories/public`);
+        if (!res.ok) throw new Error('Failed to load categories');
+        const data: CategoryRecord[] = await res.json();
+        setCategories(data);
+      } catch (e) {
+        console.error(e);
+        toast.error('Failed to load categories');
+      }
+    };
+    fetchCategories();
+  }, []);
+
   const handleAnswerChange = (questionId: string, value: string | number) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
   const handleQuestionsLoaded = (category: string, qs: QuestionRecord[]) => {
-    if (CATEGORIES.includes(category as CategoryKey)) {
-      setQuestionsByCategory(prev => ({ ...prev, [category as CategoryKey]: qs }));
-    }
+    setQuestionsByCategory(prev => ({ ...prev, [category as CategoryKey]: qs }));
   };
 
   const { completed, total, requiredTotal } = useMemo(() => {
-    const allQuestions = CATEGORIES.flatMap((c) => questionsByCategory[c as CategoryKey] || []);
+    const allQuestions = (categories || []).flatMap((c) => questionsByCategory[c.name as CategoryKey] || []);
     const totalQ = allQuestions.length;
-    const requiredQ = allQuestions.filter(q => q.is_required).length;
+    const requiredQ = totalQ; // all questions are required
     const completedQ = allQuestions.filter(q => answers[q.question_id] != null && answers[q.question_id] !== '').length;
     return { completed: completedQ, total: totalQ, requiredTotal: requiredQ };
-  }, [questionsByCategory, answers]);
+  }, [questionsByCategory, answers, categories]);
 
   const validate = () => {
     if (!facultyId) {
       toast.error('Please select a professor to evaluate.');
       return false;
     }
-    // Ensure all required questions have answers
+    // Ensure all questions have answers (all required)
     const missingRequired: string[] = [];
-    for (const cat of CATEGORIES) {
-      for (const q of questionsByCategory[cat as CategoryKey] || []) {
-        if (q.is_required && (answers[q.question_id] == null || answers[q.question_id] === '')) {
+    for (const cat of categories) {
+      for (const q of questionsByCategory[cat.name as CategoryKey] || []) {
+        if ((answers[q.question_id] == null || answers[q.question_id] === '')) {
           missingRequired.push(q.question_id);
         }
       }
@@ -157,11 +165,11 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
       const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
 
       // Build legacy payload from loaded questionsByCategory and answers
-      const records = CATEGORIES.flatMap((cat) => (questionsByCategory[cat as CategoryKey] || []).map((q) => ({
+      const records = (categories || []).flatMap((cat) => (questionsByCategory[cat.name as CategoryKey] || []).map((q) => ({
         question_id: q.question_id, // keep as string for JSONB
         category: q.category,
         answer: answers[q.question_id],
-        type: q.question_type,
+        type: 'rating_scale',
       })));
       const selectedFaculty = facultyList.find(f => f.id === facultyId);
       const legacyPayload: any = {
@@ -303,10 +311,10 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
 
       {/* Category forms (5 rating questions per category) */}
       <form onSubmit={handleSubmit} className="space-y-6">
-        {CATEGORIES.map((cat) => (
-          <div key={cat}>
+        {categories.map((cat) => (
+          <div key={cat.category_id}>
             <CategoryForm
-              category={cat}
+              category={cat.name}
               answers={answers}
               onAnswerChange={handleAnswerChange}
               onQuestionsLoaded={handleQuestionsLoaded}

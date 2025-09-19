@@ -13,7 +13,9 @@ import { Plus, Calendar as CalendarIcon, Eye, Edit, Trash2 } from 'lucide-react'
 import { format } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from './ui/dialog';
 import CreateQuestionForm from './admin/CreateQuestionForm';
-import type { QuestionRecord } from '../types/question';
+import type { QuestionRecord, CategoryRecord } from '../types/question';
+import { useAuth } from '../context/AuthContext';
+import { toast } from 'sonner';
 
 const sampleEvaluations = [
   { id: 1, title: 'Faculty Performance Evaluation - Spring 2024', type: 'Faculty', status: 'Active', startDate: '2024-03-01', endDate: '2024-03-31', responses: 245 },
@@ -25,6 +27,7 @@ const sampleEvaluations = [
 // Removed mock questions; will fetch from API
 
 export default function EvaluationManagement() {
+  const { token } = useAuth();
   const [activeTab, setActiveTab] = useState('list');
   const [startDate, setStartDate] = useState();
   const [endDate, setEndDate] = useState();
@@ -32,6 +35,13 @@ export default function EvaluationManagement() {
   const [questions, setQuestions] = useState([] as QuestionRecord[]);
   const [qLoading, setQLoading] = useState(false);
   const [qError, setQError] = useState(null as string | null);
+  // Edit question state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState(null as QuestionRecord | null);
+  const [editValues, setEditValues] = useState({ text: '', category_id: 0 as number, weight: undefined as number | undefined });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [categories, setCategories] = useState([] as CategoryRecord[]);
+  const [catsLoading, setCatsLoading] = useState(false);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -48,8 +58,10 @@ export default function EvaluationManagement() {
     setQError(null);
     try {
       const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
-      const res = await fetch(`${baseUrl}/api/questions`, {
-        headers: { 'x-admin': 'true' },
+      const res = await fetch(`${baseUrl}/api/v1/questions`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
       if (!res.ok) {
         const problem = await res.json().catch(() => null);
@@ -69,6 +81,94 @@ export default function EvaluationManagement() {
       fetchQuestions();
     }
   }, [activeTab]);
+
+  // Load categories only when editing dialog opens
+  useEffect(() => {
+    const loadCats = async () => {
+      if (!editOpen) return;
+      try {
+        setCatsLoading(true);
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const res = await fetch(`${baseUrl}/api/v1/categories/public`);
+        if (!res.ok) throw new Error(`Failed to load categories (${res.status})`);
+        const data: CategoryRecord[] = await res.json();
+        setCategories(data);
+      } catch (e: any) {
+        console.error(e);
+        toast.error(e?.message || 'Failed to load categories');
+      } finally {
+        setCatsLoading(false);
+      }
+    };
+    loadCats();
+  }, [editOpen]);
+
+  const openEdit = (q: QuestionRecord) => {
+    setEditing(q);
+    setEditValues({
+      text: q.question_text || (q as any).text || '',
+      category_id: q.category_id,
+      weight: q.weight ?? undefined,
+    });
+    setEditOpen(true);
+  };
+
+  const handleDelete = async (q: QuestionRecord) => {
+    const ok = window.confirm('Delete this question? This action cannot be undone.');
+    if (!ok) return;
+    try {
+      const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+      const res = await fetch(`${baseUrl}/api/v1/questions/${q.question_id}`, {
+        method: 'DELETE',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (res.status === 204) {
+        toast.success('Question deleted');
+        fetchQuestions();
+      } else {
+        const problem = await res.json().catch(() => null);
+        throw new Error(problem?.error?.message || `Failed to delete question (${res.status})`);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to delete question');
+    }
+  };
+
+  const submitEdit = async () => {
+    if (!editing) return;
+    try {
+      setEditSubmitting(true);
+      const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+      const payload: any = {};
+      if (typeof editValues.text === 'string') payload.text = editValues.text;
+      if (typeof editValues.category_id === 'number' && editValues.category_id > 0) payload.category_id = editValues.category_id;
+      if (editValues.weight != null) payload.weight = editValues.weight;
+      const res = await fetch(`${baseUrl}/api/v1/questions/${editing.question_id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        toast.success('Question updated');
+        setEditOpen(false);
+        setEditing(null);
+        fetchQuestions();
+      } else {
+        const problem = await res.json().catch(() => null);
+        throw new Error(problem?.error?.message || `Failed to update question (${res.status})`);
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Failed to update question');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -279,20 +379,16 @@ export default function EvaluationManagement() {
                           <div className="flex-1">
                             <p className="font-medium text-gray-900">{q.question_text}</p>
                             <div className="flex items-center space-x-4 mt-2">
-                              <Badge variant="outline" className="text-xs">
-                                {q.question_type === 'rating_scale' ? 'Rating Scale' : 'Text Response'}
-                              </Badge>
-                              {q.is_required && (
-                                <Badge className="bg-red-100 text-red-800 text-xs">Required</Badge>
-                              )}
+                              <Badge variant="outline" className="text-xs">Rating Scale</Badge>
+                              <Badge className="bg-red-100 text-red-800 text-xs">Required</Badge>
                               <Badge variant="secondary" className="text-xs">{q.category}</Badge>
                             </div>
                           </div>
                           <div className="flex space-x-2">
-                            <Button variant="outline" size="sm" className="border-gray-200 text-gray-600">
+                            <Button variant="outline" size="sm" className="border-gray-200 text-gray-600" onClick={() => openEdit(q)}>
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button variant="outline" size="sm" className="border-gray-200 text-gray-600 hover:text-red-600 hover:border-red-200">
+                            <Button variant="outline" size="sm" className="border-gray-200 text-gray-600 hover:text-red-600 hover:border-red-200" onClick={() => handleDelete(q)}>
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
@@ -304,6 +400,65 @@ export default function EvaluationManagement() {
               </div>
             </CardContent>
           </Card>
+          {/* Edit Question Dialog */}
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Question</DialogTitle>
+                <DialogDescription>Update question details.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit_text">Question Text</Label>
+                  <Textarea
+                    id="edit_text"
+                    value={editValues.text}
+                    onChange={(e) => setEditValues((p) => ({ ...p, text: e.target.value }))}
+                    className="border-gray-200 focus:border-blue-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_category">Category</Label>
+                  <Select
+                    value={editValues.category_id ? String(editValues.category_id) : ''}
+                    onValueChange={(v: string) => setEditValues((p) => ({ ...p, category_id: Number(v) }))}
+                    disabled={catsLoading}
+                  >
+                    <SelectTrigger id="edit_category" className="border-gray-200 focus:border-blue-500">
+                      <SelectValue placeholder={catsLoading ? 'Loading categories…' : (categories.length === 0 ? 'No categories found' : 'Select category')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((c) => (
+                        <SelectItem key={c.category_id} value={String(c.category_id)}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit_weight">Weight (optional)</Label>
+                  <Input
+                    id="edit_weight"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={100}
+                    placeholder="e.g., 1.00"
+                    value={editValues.weight ?? ''}
+                    onChange={(e) => setEditValues((p) => ({ ...p, weight: e.target.value === '' ? undefined : Number(e.target.value) }))}
+                    className="border-gray-200 focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setEditOpen(false)} className="border-gray-200 text-gray-600">Cancel</Button>
+                  <Button onClick={submitEdit} disabled={editSubmitting} className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white border-0">
+                    {editSubmitting ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

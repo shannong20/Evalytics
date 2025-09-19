@@ -1,49 +1,52 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
 import CategoryForm, { type AnswerMap } from '../evaluation/CategoryForm';
-import type { QuestionRecord } from '../../types/question';
+import type { QuestionRecord, CategoryRecord } from '../../types/question';
 
-const CATEGORIES = [
-  'Commitment',
-  'Knowledge of Subject',
-  'Teaching for Independent Learning',
-  'Management for Learning',
-] as const;
-
-type CategoryKey = typeof CATEGORIES[number];
+type CategoryKey = string;
 
 export default function PeerEvaluation() {
   const [peerName, setPeerName] = useState('');
   const [answers, setAnswers] = useState({} as AnswerMap);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [questionsByCategory, setQuestionsByCategory] = useState({
-    'Commitment': [],
-    'Knowledge of Subject': [],
-    'Teaching for Independent Learning': [],
-    'Management for Learning': [],
-  } as Record<CategoryKey, QuestionRecord[]>);
+  const [categories, setCategories] = useState([] as CategoryRecord[]);
+  const [questionsByCategory, setQuestionsByCategory] = useState({} as Record<CategoryKey, QuestionRecord[]>);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const res = await fetch(`${baseUrl}/api/v1/categories/public`);
+        if (!res.ok) throw new Error('Failed to load categories');
+        const data: CategoryRecord[] = await res.json();
+        setCategories(data);
+      } catch (e) {
+        console.error(e);
+        toast.error('Failed to load categories');
+      }
+    };
+    loadCategories();
+  }, []);
 
   const handleAnswerChange = (questionId: string, value: string | number) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
   const handleQuestionsLoaded = (category: string, qs: QuestionRecord[]) => {
-    if (CATEGORIES.includes(category as CategoryKey)) {
-      setQuestionsByCategory(prev => ({ ...prev, [category as CategoryKey]: qs }));
-    }
+    setQuestionsByCategory(prev => ({ ...prev, [category as CategoryKey]: qs }));
   };
 
   const { completed, total, requiredTotal } = useMemo(() => {
-    const allQuestions = CATEGORIES.flatMap((c) => questionsByCategory[c as CategoryKey] || []);
+    const allQuestions = (categories || []).flatMap((c) => questionsByCategory[c.name as CategoryKey] || []);
     const totalQ = allQuestions.length;
-    const requiredQ = allQuestions.filter(q => q.is_required).length;
+    const requiredQ = totalQ; // all required
     const completedQ = allQuestions.filter(q => answers[q.question_id] != null && answers[q.question_id] !== '').length;
     return { completed: completedQ, total: totalQ, requiredTotal: requiredQ };
-  }, [questionsByCategory, answers]);
+  }, [questionsByCategory, answers, categories]);
 
   const validate = () => {
     if (!peerName.trim()) {
@@ -51,9 +54,9 @@ export default function PeerEvaluation() {
       return false;
     }
     const missingRequired: string[] = [];
-    for (const cat of CATEGORIES) {
-      for (const q of questionsByCategory[cat as CategoryKey] || []) {
-        if (q.is_required && (answers[q.question_id] == null || answers[q.question_id] === '')) {
+    for (const cat of categories) {
+      for (const q of questionsByCategory[cat.name as CategoryKey] || []) {
+        if ((answers[q.question_id] == null || answers[q.question_id] === '')) {
           missingRequired.push(q.question_id);
         }
       }
@@ -70,11 +73,11 @@ export default function PeerEvaluation() {
     if (!validate()) return;
     setIsSubmitting(true);
     try {
-      const records = CATEGORIES.flatMap((cat) => (questionsByCategory[cat as CategoryKey] || []).map((q) => ({
+      const records = (categories || []).flatMap((cat) => (questionsByCategory[cat.name as CategoryKey] || []).map((q) => ({
         question_id: q.question_id,
         category: q.category,
         answer: answers[q.question_id],
-        type: q.question_type,
+        type: 'rating_scale',
       })));
 
       const payload = {
@@ -140,10 +143,10 @@ export default function PeerEvaluation() {
 
       {/* Category forms (5 rating questions per category) */}
       <form onSubmit={handleSubmit} className="space-y-6">
-        {CATEGORIES.map((cat) => (
-          <div key={cat}>
+        {categories.map((cat) => (
+          <div key={cat.category_id}>
             <CategoryForm
-              category={cat}
+              category={cat.name}
               answers={answers}
               onAnswerChange={handleAnswerChange}
               onQuestionsLoaded={handleQuestionsLoaded}

@@ -11,6 +11,7 @@ const questionsRoutes = require('./routes/questions.new');
 const evaluationsRoutes = require('./routes/evaluations.new');
 const reportsRoutes = require('./routes/reports');
 const departmentsRoutes = require('./routes/departments');
+const categoriesRoutes = require('./routes/categories');
 
 // Import middleware
 const { isLoggedIn } = require('./middleware/authMiddleware');
@@ -26,7 +27,7 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin']
 }));
 
 // Parse JSON bodies
@@ -62,6 +63,7 @@ app.use(`${API_PREFIX}/questions`, questionsRoutes);
 app.use(`${API_PREFIX}/evaluations`, evaluationsRoutes);
 app.use(`${API_PREFIX}/reports`, reportsRoutes);
 app.use(`${API_PREFIX}/departments`, departmentsRoutes);
+app.use(`${API_PREFIX}/categories`, categoriesRoutes);
 
 // Health check endpoint
 app.get(`${API_PREFIX}/health`, (req, res) => {

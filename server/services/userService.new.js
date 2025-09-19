@@ -218,28 +218,40 @@ async function listUsers(filters = {}) {
     userType, 
     role, 
     departmentId, 
-    isActive = true,
+    isActive,
     limit = 100,
     offset = 0
   } = filters;
   
-  const whereClauses = ['is_active = $1'];
-  const params = [isActive];
-  let paramIndex = 2;
+  const whereClauses = [];
+  const params = [];
+  let paramIndex = 1;
+  
+  // Add is_active filter if provided
+  if (isActive !== undefined) {
+    whereClauses.push('is_active = $' + paramIndex++);
+    params.push(isActive);
+  }
   
   if (userType) {
     whereClauses.push(`user_type = $${paramIndex++}`);
     params.push(userType);
-  }
-  
-  if (role) {
-    whereClauses.push(`role = $${paramIndex++}`);
-    params.push(role);
+    
+    // If userType is USER, ensure we filter by role if provided
+    if (userType === 'User' && role) {
+      whereClauses.push(`LOWER(role) = $${paramIndex++}`);
+      params.push(role.toLowerCase());
+    }
+  } else if (role) {
+    // If no userType provided but role is, still filter by role (case-insensitive)
+    whereClauses.push(`LOWER(role) = $${paramIndex++}`);
+    params.push(role.toLowerCase());
   }
   
   if (departmentId) {
+    // Compare as integer to match current schema
     whereClauses.push(`department_id = $${paramIndex++}`);
-    params.push(departmentId);
+    params.push(Number(departmentId));
   }
   
   const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -257,10 +269,22 @@ async function listUsers(filters = {}) {
   params.push(limit, offset);
   
   try {
-    const { rows } = await query(sql, params);
-    return rows;
+    console.log('Executing SQL:', sql);
+    console.log('With params:', params);
+    
+    const result = await query(sql, params);
+    console.log('Query result rows:', result.rows.length);
+    return result.rows;
   } catch (error) {
-    console.error('Error listing users:', error);
+    console.error('Error listing users:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      hint: error.hint,
+      position: error.position,
+      where: error.where,
+      stack: error.stack
+    });
     throw error;
   }
 }

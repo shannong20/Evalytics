@@ -70,6 +70,40 @@ exports.restrictTo = (...roles) => {
 };
 
 /**
+ * Restrict by user_type (e.g., 'Admin' or 'User')
+ */
+exports.restrictToUserType = (...types) => {
+  return (req, res, next) => {
+    const userType = req.user?.user_type || req.user?.userType;
+    if (!types.includes(userType)) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'You do not have permission to perform this action'
+      });
+    }
+    next();
+  };
+};
+
+/**
+ * Allow admin access if either:
+ *  - req.user.role === 'admin' (case-insensitive)
+ *  - req.user.user_type === 'Admin'
+ */
+exports.allowAdmin = (req, res, next) => {
+  const role = String(req.user?.role || '').toLowerCase();
+  const userType = req.user?.user_type || req.user?.userType;
+  const isAdmin = role === 'admin' || userType === 'Admin';
+  if (!isAdmin) {
+    return res.status(403).json({
+      status: 'error',
+      message: 'You do not have permission to perform this action'
+    });
+  }
+  next();
+};
+
+/**
  * Check if user is logged in (for server-side rendering)
  */
 exports.isLoggedIn = async (req, res, next) => {

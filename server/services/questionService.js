@@ -21,9 +21,9 @@ async function getCategoriesWithQuestions() {
           ORDER BY q.question_id
         ) AS questions
       FROM
-        Category c
+        category c
       LEFT JOIN
-        Question q ON c.category_id = q.category_id
+        question q ON c.category_id = q.category_id
       GROUP BY
         c.category_id, c.name, c.weight
       ORDER BY

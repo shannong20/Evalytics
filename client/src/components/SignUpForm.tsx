@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { listDepartments } from '@/services/departmentService';
 
 // Backend API base URL
 const API_BASE = (import.meta as any)?.env?.VITE_SERVER_URL || 'http://localhost:5000';
@@ -35,13 +36,28 @@ export default function SignUpForm() {
     departmentName: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [departments, setDepartments] = useState([] as Array<{ department_id: string; name: string }>);
   const roleRequiresDepartment = useMemo(() => {
     if (formData.userType !== 'user') return false;
     const r = (formData.role || '').toLowerCase();
     return r === 'student' || r === 'faculty' || r === 'supervisor';
   }, [formData.userType, formData.role]);
 
-  // No remote fetch; we use a fixed list of departments
+  // Load departments on mount
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const data = await listDepartments();
+        if (isMounted && Array.isArray(data)) {
+          setDepartments(data);
+        }
+      } catch (err) {
+        console.error('Failed to load departments:', err);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
@@ -129,6 +145,12 @@ export default function SignUpForm() {
         if (!r) {
           next.departmentName = '';
         }
+      }
+      // When departmentId changes, update both id and name
+      if (name === 'departmentId') {
+        const selected = departments.find(d => String(d.department_id) === String(value));
+        next.departmentId = value || null;
+        next.departmentName = selected?.name || '';
       }
       return next;
     });
@@ -237,18 +259,18 @@ export default function SignUpForm() {
             
             
             <div className="space-y-2">
-              <Label htmlFor="departmentName">Department</Label>
+              <Label htmlFor="departmentId">Department</Label>
               <select
-                id="departmentName"
-                name="departmentName"
+                id="departmentId"
+                name="departmentId"
                 className={`flex h-10 w-full rounded-md border ${roleRequiresDepartment && !formData.departmentName ? 'border-red-500' : 'border-input'} bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
-                value={formData.departmentName}
+                value={formData.departmentId || ''}
                 onChange={handleChange}
                 disabled={formData.userType !== 'user'}
               >
                 <option value="">{formData.userType !== 'user' ? 'N/A for Admin' : 'Select department'}</option>
-                {STATIC_DEPARTMENTS.map((name) => (
-                  <option key={name} value={name}>{name}</option>
+                {departments.map(d => (
+                  <option key={d.department_id} value={d.department_id}>{d.name}</option>
                 ))}
               </select>
               {formData.userType === 'user' && roleRequiresDepartment && !formData.departmentName && (

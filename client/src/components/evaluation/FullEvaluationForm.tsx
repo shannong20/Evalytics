@@ -7,30 +7,19 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import type { QuestionRecord } from '../../types/question';
+import type { QuestionRecord, CategoryRecord } from '../../types/question';
 
 export type AnswerMap = Record<string, string | number>;
 
-const CATEGORY_ORDER = [
-  'Commitment',
-  'Knowledge of Subject',
-  'Teaching for Independent Learning',
-  'Management for Learning',
-] as const;
-
-type CategoryKey = typeof CATEGORY_ORDER[number];
+type CategoryKey = string;
 
 export default function FullEvaluationForm() {
   const [answers, setAnswers] = useState({} as AnswerMap);
   const [targetName, setTargetName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [questionsByCategory, setQuestionsByCategory] = useState({
-    'Commitment': [],
-    'Knowledge of Subject': [],
-    'Teaching for Independent Learning': [],
-    'Management for Learning': [],
-  } as Record<CategoryKey, QuestionRecord[]>);
+  const [categories, setCategories] = useState([] as CategoryRecord[]);
+  const [questionsByCategory, setQuestionsByCategory] = useState({} as Record<CategoryKey, QuestionRecord[]>);
 
   useEffect(() => {
     let isMounted = true;
@@ -39,24 +28,26 @@ export default function FullEvaluationForm() {
         setLoading(true);
         setError('');
         const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
-        const res = await fetch(`${baseUrl}/api/questions/public`);
+        // Load categories
+        const catRes = await fetch(`${baseUrl}/api/v1/categories/public`);
+        if (!catRes.ok) throw new Error('Failed to load categories');
+        const cats: CategoryRecord[] = await catRes.json();
+        setCategories(cats);
+
+        // Load questions
+        const res = await fetch(`${baseUrl}/api/v1/questions/public`);
         if (!res.ok) throw new Error('Failed to load questions');
         const data: QuestionRecord[] = await res.json();
         if (!Array.isArray(data)) throw new Error('Invalid data received');
 
-        // Only rating_scale questions as required
-        const ratings = data.filter(q => q.question_type === 'rating_scale');
+        // Use all questions; UI treats all as rating-scale and required
+        const ratings = data;
 
         // Group by canonical categories in a fixed order
-        const grouped = CATEGORY_ORDER.reduce((acc, cat) => {
-          acc[cat] = ratings.filter(q => q.category === cat);
+        const grouped = (cats || []).reduce((acc, cat) => {
+          acc[cat.name] = ratings.filter(q => q.category === cat.name);
           return acc;
-        }, {
-          'Commitment': [] as QuestionRecord[],
-          'Knowledge of Subject': [] as QuestionRecord[],
-          'Teaching for Independent Learning': [] as QuestionRecord[],
-          'Management for Learning': [] as QuestionRecord[],
-        } as Record<CategoryKey, QuestionRecord[]>);
+        }, {} as Record<CategoryKey, QuestionRecord[]>);
 
         if (isMounted) setQuestionsByCategory(grouped);
       } catch (e: any) {
@@ -73,9 +64,9 @@ export default function FullEvaluationForm() {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
-  const allQuestions = useMemo(() => CATEGORY_ORDER.flatMap(cat => questionsByCategory[cat] || []), [questionsByCategory]);
+  const allQuestions = useMemo(() => (categories || []).flatMap(cat => questionsByCategory[cat.name] || []), [questionsByCategory, categories]);
   const completed = useMemo(() => allQuestions.filter(q => answers[q.question_id] != null && answers[q.question_id] !== '').length, [allQuestions, answers]);
-  const requiredTotal = useMemo(() => allQuestions.filter(q => q.is_required).length, [allQuestions]);
+  const requiredTotal = useMemo(() => allQuestions.length, [allQuestions]);
 
   const validate = () => {
     if (!targetName.trim()) {
@@ -84,7 +75,7 @@ export default function FullEvaluationForm() {
     }
     const missingRequired: string[] = [];
     for (const q of allQuestions) {
-      if (q.is_required && (answers[q.question_id] == null || answers[q.question_id] === '')) missingRequired.push(q.question_id);
+      if ((answers[q.question_id] == null || answers[q.question_id] === '')) missingRequired.push(q.question_id);
     }
     if (missingRequired.length) {
       toast.error('Please answer all required questions before submitting.');
@@ -101,7 +92,7 @@ export default function FullEvaluationForm() {
         question_id: q.question_id,
         category: q.category,
         answer: answers[q.question_id],
-        type: q.question_type,
+        type: 'rating_scale',
       }));
 
       const payload = {
@@ -164,14 +155,14 @@ export default function FullEvaluationForm() {
       {loading && <div className="text-sm text-gray-600">Loading questions…</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
 
-      {!loading && !error && CATEGORY_ORDER.map((cat) => {
-        const qs = questionsByCategory[cat] || [];
+      {!loading && !error && categories.map((cat) => {
+        const qs = questionsByCategory[cat.name] || [];
         return (
-          <Card key={cat} className="border-0 shadow-md">
+          <Card key={cat.category_id} className="border-0 shadow-md">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>{cat}</CardTitle>
+                  <CardTitle>{cat.name}</CardTitle>
                   <CardDescription>Answer all questions in this category.</CardDescription>
                 </div>
                 <Badge variant="secondary" className="bg-gray-100 text-gray-700">
@@ -196,10 +187,9 @@ export default function FullEvaluationForm() {
                         <span className="mr-2">{idx + 1}.</span>
                         <span>
                           {q.question_text}
-                          {q.is_required && <span className="text-red-500 ml-1">*</span>}
+                          <span className="text-red-500 ml-1">*</span>
                         </span>
                       </Label>
-
                       <RadioGroup
                         value={answers[q.question_id]?.toString() || ''}
                         onValueChange={(value) => handleAnswerChange(q.question_id, value)}

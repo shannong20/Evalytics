@@ -5,16 +5,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Checkbox } from '../ui/checkbox';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import type { QuestionCreateInput, QuestionType } from '../../types/question';
+import type { QuestionCreateInput, CategoryRecord } from '../../types/question';
+import { useAuth } from '../../context/AuthContext';
 
 const schema = z.object({
-  question_text: z.string().trim().min(5, 'Minimum 5 characters').max(300, 'Maximum 300 characters'),
-  question_type: z.enum(['rating_scale', 'text_response']),
-  is_required: z.boolean().optional().default(false),
-  category: z.string().trim().min(2, 'Minimum 2 characters').max(100, 'Maximum 100 characters'),
+  text: z.string().trim().min(5, 'Minimum 5 characters').max(255, 'Maximum 255 characters'),
+  category_id: z.number().int().positive('Select a category'),
+  weight: z.number().min(0).max(100).optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -24,26 +23,71 @@ type Props = {
 };
 
 export default function CreateQuestionForm({ onCreated }: Props) {
+  const { token } = useAuth();
+  const [categories, setCategories] = React.useState([] as CategoryRecord[]);
+  const [loadingCats, setLoadingCats] = React.useState(true as boolean);
   const { control, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      question_text: '',
-      question_type: 'rating_scale',
-      is_required: false,
-      category: '',
+      text: '',
+      category_id: undefined as unknown as number,
+      weight: undefined,
     },
     mode: 'onBlur',
   });
 
+  React.useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const url = `${baseUrl}/api/v1/categories/public`;
+        let data: CategoryRecord[] | null = null;
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            data = await res.json();
+          } else {
+            throw new Error(`HTTP ${res.status}`);
+          }
+        } catch (_e) {
+          // Fallback: try the alternate common port (3000<->5000)
+          try {
+            const altBase = baseUrl.includes(':5000')
+              ? baseUrl.replace(':5000', ':3000')
+              : baseUrl.includes(':3000')
+              ? baseUrl.replace(':3000', ':5000')
+              : 'http://localhost:3000';
+            const res2 = await fetch(`${altBase}/api/v1/categories/public`);
+            if (res2.ok) {
+              data = await res2.json();
+            }
+          } catch {}
+        }
+        if (Array.isArray(data)) {
+          setCategories(data);
+        } else {
+          throw new Error('Failed to load categories');
+        }
+      } catch (e) {
+        console.error(e);
+        toast.error('Failed to load categories');
+      } finally {
+        setLoadingCats(false);
+      }
+    };
+    loadCategories();
+  }, []);
+
   const onSubmit = async (values: FormValues) => {
     try {
       const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
-      const res = await fetch(`${baseUrl}/api/questions`, {
+      const res = await fetch(`${baseUrl}/api/v1/questions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin': 'true',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        // The API expects { text, category_id, weight? }
         body: JSON.stringify(values satisfies QuestionCreateInput),
       });
 
@@ -67,80 +111,79 @@ export default function CreateQuestionForm({ onCreated }: Props) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
       <div className="space-y-2">
-        <Label htmlFor="question_text">Question Text</Label>
+        <Label htmlFor="text">Question Text</Label>
         <Controller
           control={control}
-          name="question_text"
+          name="text"
           render={({ field }) => (
             <Textarea
-              id="question_text"
+              id="text"
               placeholder="Enter the question"
-              aria-invalid={!!errors.question_text}
-              aria-describedby={errors.question_text ? 'question_text-error' : undefined}
+              aria-invalid={!!errors.text}
+              aria-describedby={errors.text ? 'text-error' : undefined}
               className="border-gray-200 focus:border-blue-500"
               {...field}
             />
           )}
         />
-        {errors.question_text && (
-          <p id="question_text-error" className="text-red-600 text-sm">{errors.question_text.message}</p>
+        {errors.text && (
+          <p id="text-error" className="text-red-600 text-sm">{errors.text.message}</p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="question_type">Question Type</Label>
-          <Controller
-            control={control}
-            name="question_type"
-            render={({ field }) => (
-              <Select value={field.value} onValueChange={(v: QuestionType) => field.onChange(v)}>
-                <SelectTrigger id="question_type" className="border-gray-200 focus:border-blue-500">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="rating_scale">Rating Scale</SelectItem>
-                  <SelectItem value="text_response">Text Response</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="category">Category</Label>
-          <Controller
-            control={control}
-            name="category"
-            render={({ field }) => (
-              <Select value={field.value} onValueChange={(v: string) => field.onChange(v)}>
-                <SelectTrigger id="category" className="border-gray-200 focus:border-blue-500">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Commitment">Commitment</SelectItem>
-                  <SelectItem value="Knowledge of Subject">Knowledge of Subject</SelectItem>
-                  <SelectItem value="Teaching for Independent Learning">Teaching for Independent Learning</SelectItem>
-                  <SelectItem value="Management for Learning">Management for Learning</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          />
-          {errors.category && (
-            <p id="category-error" className="text-red-600 text-sm">{errors.category.message}</p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center space-x-2">
+      <div className="space-y-2">
+        <Label htmlFor="category_id">Category</Label>
         <Controller
           control={control}
-          name="is_required"
+          name="category_id"
           render={({ field }) => (
-            <Checkbox id="is_required" checked={!!field.value} onCheckedChange={(v: boolean) => field.onChange(!!v)} />
+            <Select value={field.value?.toString()}
+                    onValueChange={(v: string) => field.onChange(Number(v))}
+                    disabled={loadingCats}
+            >
+              <SelectTrigger id="category_id" className="border-gray-200 focus:border-blue-500">
+                <SelectValue placeholder={loadingCats ? 'Loading categories…' : (categories.length === 0 ? 'No categories found' : 'Select category')} />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.category_id} value={c.category_id.toString()}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         />
-        <Label htmlFor="is_required" className="cursor-pointer">Required</Label>
+        {errors.category_id && (
+          <p id="category_id-error" className="text-red-600 text-sm">{errors.category_id.message}</p>
+        )}
       </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="weight">Weight (optional)</Label>
+        <Controller
+          control={control}
+          name="weight"
+          render={({ field }) => (
+            <input
+              id="weight"
+              type="number"
+              step="0.01"
+              min={0}
+              max={100}
+              placeholder="e.g., 1.00"
+              className="w-full border rounded px-3 py-2 border-gray-200 focus:border-blue-500"
+              value={field.value ?? ''}
+              onChange={(e) => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+            />
+          )}
+        />
+        {errors.weight && (
+          <p id="weight-error" className="text-red-600 text-sm">{errors.weight.message}</p>
+        )}
+      </div>
+
+      {/* All questions are required by default; no toggle needed. */}
 
       <div className="flex justify-end space-x-2">
         <Button type="submit" disabled={isSubmitting} className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white border-0">

@@ -1,89 +1,44 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
-import { Separator } from '../ui/separator';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
-import { 
-  BookOpen, 
-  Search, 
-  Users, 
-  MessageCircle, 
-  Save,
-  Send,
-  AlertCircle,
-  CheckCircle
-} from 'lucide-react';
-
-const evaluationCategories = [
-  {
-    id: 'teaching',
-    title: 'Teaching Effectiveness',
-    icon: BookOpen,
-    description: 'Evaluate your teaching methods, course delivery, and student engagement',
-    questions: [
-      'I demonstrate mastery of my subject matter',
-      'I present course content in an organized and clear manner',
-      'I use effective teaching methods and techniques',
-      'I encourage student participation and engagement',
-      'I provide constructive feedback to students'
-    ]
-  },
-  {
-    id: 'research',
-    title: 'Research & Scholarship',
-    icon: Search,
-    description: 'Assess your research activities, publications, and scholarly contributions',
-    questions: [
-      'I actively engage in research activities',
-      'I publish my research in peer-reviewed journals',
-      'I attend and present at academic conferences',
-      'I collaborate with other researchers effectively',
-      'I integrate current research into my teaching'
-    ]
-  },
-  {
-    id: 'service',
-    title: 'Service & Leadership',
-    icon: Users,
-    description: 'Rate your contributions to the department, university, and profession',
-    questions: [
-      'I participate actively in department committees',
-      'I contribute to university-wide initiatives',
-      'I provide service to professional organizations',
-      'I mentor junior faculty and students effectively',
-      'I take on leadership roles when appropriate'
-    ]
-  },
-  {
-    id: 'communication',
-    title: 'Communication & Collaboration',
-    icon: MessageCircle,
-    description: 'Evaluate your interpersonal and communication skills',
-    questions: [
-      'I communicate effectively with students',
-      'I maintain positive relationships with colleagues',
-      'I respond promptly to emails and requests',
-      'I collaborate well on team projects',
-      'I present my ideas clearly in meetings'
-    ]
-  }
-];
+import { Save, Send, AlertCircle, CheckCircle } from 'lucide-react';
+import CategoryForm, { type AnswerMap } from '../evaluation/CategoryForm';
+import type { CategoryRecord, QuestionRecord } from '../../types/question';
 
 export default function SelfEvaluation() {
-  const [formData, setFormData] = useState({});
-  const [comments, setComments] = useState({});
+  const [answers, setAnswers] = useState({} as AnswerMap);
+  const [comments, setComments] = useState({} as Record<string, string>);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDraft, setIsDraft] = useState(false);
+  const [categories, setCategories] = useState([] as CategoryRecord[]);
+  const [questionsByCategory, setQuestionsByCategory] = useState({} as Record<string, QuestionRecord[]>);
 
-  const handleRatingChange = (categoryId, questionIndex, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [`${categoryId}_${questionIndex}`]: parseInt(value)
-    }));
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const res = await fetch(`${baseUrl}/api/v1/categories/public`);
+        if (!res.ok) throw new Error('Failed to load categories');
+        const data: CategoryRecord[] = await res.json();
+        setCategories(data);
+      } catch (e) {
+        console.error(e);
+        toast.error('Failed to load categories');
+      }
+    };
+    fetchCategories();
+  }, []);
+
+  const handleAnswerChange = (questionId: string, value: string | number) => {
+    setAnswers(prev => ({ ...prev, [questionId]: value }));
+  };
+
+  const handleQuestionsLoaded = (category: string, qs: QuestionRecord[]) => {
+    setQuestionsByCategory(prev => ({ ...prev, [category]: qs }));
   };
 
   const handleCommentChange = (categoryId, value) => {
@@ -93,12 +48,14 @@ export default function SelfEvaluation() {
     }));
   };
 
+  const allQuestions = useMemo(() => (categories || []).flatMap(c => questionsByCategory[c.name] || []), [categories, questionsByCategory]);
+  const completed = useMemo(() => allQuestions.filter(q => answers[q.question_id] != null && answers[q.question_id] !== '').length, [allQuestions, answers]);
+  const total = useMemo(() => allQuestions.length, [allQuestions]);
+  const completionPercentage = useMemo(() => total > 0 ? Math.round((completed / total) * 100) : 0, [completed, total]);
+
   const validateForm = () => {
-    const totalQuestions = evaluationCategories.reduce((sum, cat) => sum + cat.questions.length, 0);
-    const answeredQuestions = Object.keys(formData).length;
-    
-    if (answeredQuestions < totalQuestions) {
-      toast.error(`Please answer all questions. ${answeredQuestions}/${totalQuestions} completed.`);
+    if (completed < total) {
+      toast.error(`Please answer all questions. ${completed}/${total} completed.`);
       return false;
     }
     return true;
@@ -114,13 +71,9 @@ export default function SelfEvaluation() {
 
     try {
       // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      if (asDraft) {
-        toast.success('Evaluation saved as draft successfully!');
-      } else {
-        toast.success('Self-evaluation submitted successfully!');
-      }
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      if (asDraft) toast.success('Evaluation saved as draft successfully!');
+      else toast.success('Self-evaluation submitted successfully!');
     } catch (error) {
       toast.error('Failed to submit evaluation. Please try again.');
     } finally {
@@ -128,15 +81,6 @@ export default function SelfEvaluation() {
       setIsDraft(false);
     }
   };
-
-  const getCompletionStats = () => {
-    const totalQuestions = evaluationCategories.reduce((sum, cat) => sum + cat.questions.length, 0);
-    const answeredQuestions = Object.keys(formData).length;
-    return { completed: answeredQuestions, total: totalQuestions };
-  };
-
-  const { completed, total } = getCompletionStats();
-  const completionPercentage = Math.round((completed / total) * 100);
 
   return (
     <div className="space-y-6">
@@ -175,77 +119,44 @@ export default function SelfEvaluation() {
         </CardContent>
       </Card>
 
-      {/* Evaluation Categories */}
+      {/* Evaluation Categories (Dynamic) */}
       <div className="space-y-6">
-        {evaluationCategories.map((category, categoryIndex) => {
-          const Icon = category.icon;
-          const categoryAnswered = category.questions.filter((_, qIndex) => 
-            formData[`${category.id}_${qIndex}`]
-          ).length;
-          
-          return (
-            <Card key={category.id} className="border-0 shadow-md">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
-                      <Icon className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle>{category.title}</CardTitle>
-                      <CardDescription>{category.description}</CardDescription>
-                    </div>
-                  </div>
-                  <Badge className={categoryAnswered === category.questions.length ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
-                    {categoryAnswered}/{category.questions.length}
-                  </Badge>
+        {categories.map((cat) => (
+          <Card key={cat.category_id} className="border-0 shadow-md">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>{cat.name}</CardTitle>
+                  <CardDescription>Answer all questions in this category.</CardDescription>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {category.questions.map((question, questionIndex) => (
-                  <div key={questionIndex} className="space-y-3">
-                    <Label className="text-base">{questionIndex + 1}. {question}</Label>
-                    <RadioGroup
-                      value={formData[`${category.id}_${questionIndex}`]?.toString() || ''}
-                      onValueChange={(value) => handleRatingChange(category.id, questionIndex, value)}
-                    >
-                      <div className="flex space-x-6">
-                        {[1, 2, 3, 4, 5].map((rating) => (
-                          <div key={rating} className="flex items-center space-x-2">
-                            <RadioGroupItem value={rating.toString()} id={`${category.id}_${questionIndex}_${rating}`} />
-                            <Label 
-                              htmlFor={`${category.id}_${questionIndex}_${rating}`}
-                              className="text-sm font-normal cursor-pointer"
-                            >
-                              {rating}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                    </RadioGroup>
-                    <div className="text-xs text-gray-500 flex justify-between">
-                      <span>Strongly Disagree</span>
-                      <span>Strongly Agree</span>
-                    </div>
-                    {questionIndex < category.questions.length - 1 && <Separator />}
-                  </div>
-                ))}
-                
-                {/* Comments section for each category */}
-                <div className="mt-6 space-y-2">
-                  <Label htmlFor={`${category.id}_comments`}>Additional Comments (Optional)</Label>
-                  <Textarea
-                    id={`${category.id}_comments`}
-                    placeholder={`Share any additional thoughts about your ${category.title.toLowerCase()}...`}
-                    value={comments[category.id] || ''}
-                    onChange={(e) => handleCommentChange(category.id, e.target.value)}
-                    className="min-h-[100px] border-gray-200 focus:border-blue-500"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                <Badge className="bg-gray-100 text-gray-600">
+                  {(questionsByCategory[cat.name]?.filter(q => answers[q.question_id] != null && answers[q.question_id] !== '').length || 0)}/{(questionsByCategory[cat.name]?.length || 0)}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <CategoryForm
+                category={cat.name}
+                answers={answers}
+                onAnswerChange={handleAnswerChange}
+                onQuestionsLoaded={handleQuestionsLoaded}
+                ratingOnly
+                limit={5}
+              />
+              {/* Comments section for each category */}
+              <div className="mt-6 space-y-2">
+                <Label htmlFor={`${cat.category_id}_comments`}>Additional Comments (Optional)</Label>
+                <Textarea
+                  id={`${cat.category_id}_comments`}
+                  placeholder={`Share any additional thoughts about your ${cat.name.toLowerCase()}...`}
+                  value={comments[String(cat.category_id)] || ''}
+                  onChange={(e) => handleCommentChange(String(cat.category_id), e.target.value)}
+                  className="min-h-[100px] border-gray-200 focus:border-blue-500"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Overall Comments */}
