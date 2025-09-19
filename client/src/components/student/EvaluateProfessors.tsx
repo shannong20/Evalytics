@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import CategoryForm, { type AnswerMap } from '../evaluation/CategoryForm';
 import type { QuestionRecord, CategoryRecord } from '../../types/question';
 import { useAuth } from '../../context/AuthContext';
+import { Label } from '../ui/label';
+import { Textarea } from '../ui/textarea';
 
 type Faculty = {
   id: number;
@@ -35,6 +37,9 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categories, setCategories] = useState([] as CategoryRecord[]);
   const [questionsByCategory, setQuestionsByCategory] = useState({} as Record<CategoryKey, QuestionRecord[]>);
+  const [courses, setCourses] = useState([] as { course_id: number; course_code: string; course_title: string }[]);
+  const [courseId, setCourseId] = useState(null as number | null);
+  const [comments, setComments] = useState('');
 
   // When a faculty is pre-selected (e.g., by a parent flow), honor it
   useEffect(() => {
@@ -81,6 +86,35 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
     fetchFaculty();
   }, []);
 
+  // Fetch courses whenever a faculty (evaluatee) is selected
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        if (!facultyId) { setCourses([]); setCourseId(null); return; }
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const url = `${baseUrl}/api/v1/courses?evaluateeId=${facultyId}`;
+        const res = await fetch(url, {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          }
+        });
+        if (!res.ok) throw new Error('Failed to load courses');
+        const payload = await res.json();
+        const list = Array.isArray(payload?.data) ? payload.data : [];
+        setCourses(list);
+        // If current selection is not in list, reset
+        if (!list.find((c: any) => Number(c.course_id) === Number(courseId))) {
+          setCourseId(list.length > 0 ? Number(list[0].course_id) : null);
+        }
+      } catch (e) {
+        console.error('Error fetching courses:', e);
+        toast.error('Failed to load courses for the selected professor');
+      }
+    };
+    fetchCourses();
+  }, [facultyId, token]);
+
   // Load categories once
   useEffect(() => {
     const fetchCategories = async () => {
@@ -119,6 +153,11 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
       toast.error('Please select a professor to evaluate.');
       return false;
     }
+    // Require course selection
+    if (!courseId) {
+      toast.error('Please select a course.');
+      return false;
+    }
     // Ensure all questions have answers (all required)
     const missingRequired: string[] = [];
     for (const cat of categories) {
@@ -143,10 +182,9 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
       // Prepare payloads for both structured and legacy endpoints
       const entries = Object.entries(answers);
       const hasNonNumericIds = entries.some(([qid]) => !Number.isInteger(Number(qid)));
-      const answersPayloadStructured = entries.map(([questionId, answerValue]) => ({
-        question_id: Number(questionId), // numeric for structured endpoint
-        answer_value: answerValue,
-        metadata: null,
+      const responsesStructured = entries.map(([questionId, answerValue]) => ({
+        question_id: Number(questionId),
+        rating: Number(answerValue),
       }));
 
       if (!facultyId) {
@@ -183,6 +221,8 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
       if ((user as any)?.student_id) legacyPayload.student_id = Number((user as any).student_id);
       legacyPayload.faculty_id = facultyId;
       if (department && department.trim()) legacyPayload.department = department.trim();
+      legacyPayload.course_id = courseId;
+      if (String(comments).trim() !== '') legacyPayload.comments = String(comments).trim();
 
       let res: Response;
       if (hasNonNumericIds) {
@@ -198,14 +238,13 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
       } else {
         // Try structured path first
         const payload = {
-          form_id: FORM_ID,
-          student_id: Number((user as any).student_id ?? user.id),
-          user_id: Number(user.id),
-          faculty_id: facultyId,
-          answers: answersPayloadStructured,
+          evaluatee_id: Number(facultyId),
+          course_id: Number(courseId),
+          responses: responsesStructured,
+          comments: String(comments || '').trim() || undefined,
         };
         console.log('Submitting payload (structured):', JSON.stringify(payload, null, 2));
-        res = await fetch(`${baseUrl}/api/evaluations`, {
+        res = await fetch(`${baseUrl}/api/v1/evaluations`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -233,6 +272,8 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
         const result = await res.json();
         toast.success('Evaluation submitted successfully');
         setAnswers({});
+        setCourseId(null);
+        setComments('');
         return result;
       } else {
         const errorData = await res.json().catch(() => ({}));
@@ -290,16 +331,37 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-0 shadow-md">
-          <CardHeader>
-            <CardTitle>Professor</CardTitle>
-            <CardDescription>Prefilled by your selection</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-gray-800">{prefilledProfessorName || 'Selected faculty'}</div>
-          </CardContent>
-        </Card>
+        null
       )}
+
+      {/* Course selection (always shown once a professor is chosen) */}
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <CardTitle>Select Course</CardTitle>
+          <CardDescription>Courses are filtered by the selected professor's department</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="courseSelect">Course</Label>
+            <Select
+              value={courseId != null ? String(courseId) : ''}
+              onValueChange={(val) => setCourseId(Number(val))}
+              disabled={isSubmitting || !facultyId || courses.length === 0}
+            >
+              <SelectTrigger id="courseSelect" className="w-full">
+                <SelectValue placeholder={facultyId ? (courses.length ? 'Select a course' : 'No courses found') : 'Select a professor first'} />
+              </SelectTrigger>
+              <SelectContent>
+                {courses.map((c) => (
+                  <SelectItem key={c.course_id} value={String(c.course_id)}>
+                    {c.course_code} - {c.course_title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Progress badge */}
       <div className="flex items-center justify-between">
@@ -324,6 +386,27 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
             />
           </div>
         ))}
+
+        {/* Comments field at the end of the form */}
+        <Card className="border-0 shadow-md">
+          <CardHeader>
+            <CardTitle>Additional Comments</CardTitle>
+            <CardDescription>Optional. Share any feedback or remarks.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="comments">Comments</Label>
+              <Textarea
+                id="comments"
+                placeholder="Write any additional comments here..."
+                value={comments}
+                onChange={(e) => setComments(e.target.value)}
+                className="min-h-28"
+                disabled={isSubmitting}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="flex justify-end">
           <Button type="submit" disabled={isSubmitting} className="min-w-40">

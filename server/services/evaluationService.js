@@ -7,9 +7,11 @@ const reportService = require('../services/reportService');
  * @param {number} evaluationData.evaluator_id The ID of the user submitting the evaluation.
  * @param {number} evaluationData.evaluatee_id The ID of the user being evaluated.
  * @param {Array<{question_id: number, rating: number}>} evaluationData.responses An array of response objects.
+ * @param {number} evaluationData.course_id The ID of the course being evaluated.
+ * @param {string} [evaluationData.comments] Optional free-text comments.
  * @returns {Promise<{evaluation_id: number, overall_score: number}>} The created evaluation's ID and final score.
  */
-async function submitEvaluation({ evaluator_id, evaluatee_id, responses }) {
+async function submitEvaluation({ evaluator_id, evaluatee_id, course_id, responses, comments }) {
   // Validate responses array
   if (!Array.isArray(responses) || responses.length === 0) {
     const err = new Error('The `responses` array cannot be empty.');
@@ -22,13 +24,18 @@ async function submitEvaluation({ evaluator_id, evaluatee_id, responses }) {
   try {
     await client.query('BEGIN');
 
-    // 1. Insert into Evaluation table
+    // 1. Insert into Evaluation table (store optional comments)
     const evaluationQuery = `
-      INSERT INTO Evaluation (evaluator_id, evaluatee_id, date_submitted)
-      VALUES ($1, $2, CURRENT_TIMESTAMP)
+      INSERT INTO Evaluation (evaluator_id, evaluatee_id, course_id, comments, date_submitted)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
       RETURNING evaluation_id;
     `;
-    const evaluationResult = await client.query(evaluationQuery, [evaluator_id, evaluatee_id]);
+    const evaluationResult = await client.query(evaluationQuery, [
+      evaluator_id,
+      evaluatee_id,
+      course_id,
+      (comments && String(comments).trim()) ? String(comments).trim() : null,
+    ]);
     const evaluation_id = evaluationResult.rows[0].evaluation_id;
 
     // 2. Insert all responses into the Response table

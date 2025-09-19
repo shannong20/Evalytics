@@ -15,13 +15,15 @@ const submitEvaluation = async (req, res) => {
 
   // The evaluator is the currently authenticated user
   const evaluator_id = req.user.user_id;
-  const { evaluatee_id, responses } = req.body;
+  const { evaluatee_id, course_id, responses } = req.body;
 
   try {
     const result = await evaluationService.submitEvaluation({
       evaluator_id,
       evaluatee_id,
+      course_id,
       responses,
+      comments: req.body.comments,
     });
 
     return res.status(201).json({

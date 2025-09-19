@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth.new');
 const usersRoutes = require('./routes/users.new');
 const questionsRoutes = require('./routes/questions.new');
 const evaluationsRoutes = require('./routes/evaluations.new');
+const coursesRoutes = require('./routes/courses');
 const reportsRoutes = require('./routes/reports');
 const departmentsRoutes = require('./routes/departments');
 const categoriesRoutes = require('./routes/categories');
@@ -61,6 +62,7 @@ app.use(`${API_PREFIX}/questions`, questionsRoutes);
 // Deprecate old questions routes if necessary, or remove them.
 // For now, we are replacing it directly.
 app.use(`${API_PREFIX}/evaluations`, evaluationsRoutes);
+app.use(`${API_PREFIX}/courses`, coursesRoutes);
 app.use(`${API_PREFIX}/reports`, reportsRoutes);
 app.use(`${API_PREFIX}/departments`, departmentsRoutes);
 app.use(`${API_PREFIX}/categories`, categoriesRoutes);

@@ -12,6 +12,9 @@ const submissionValidationRules = [
   body('evaluatee_id')
     .isInt({ gt: 0 })
     .withMessage('A valid evaluatee_id is required.'),
+  body('course_id')
+    .isInt({ gt: 0 })
+    .withMessage('A valid course_id is required.'),
   body('responses')
     .isArray({ min: 1 })
     .withMessage('The `responses` array must not be empty.'),
@@ -20,7 +23,11 @@ const submissionValidationRules = [
     .withMessage('Each response must have a valid question_id.'),
   body('responses.*.rating')
     .isNumeric()
-    .withMessage('Each response must have a numeric rating.')
+    .withMessage('Each response must have a numeric rating.'),
+  body('comments')
+    .optional()
+    .isString()
+    .withMessage('Comments must be a string if provided.'),
 ];
 
 /**
