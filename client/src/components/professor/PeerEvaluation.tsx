@@ -5,7 +5,14 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
 import CategoryForm, { type AnswerMap } from '../evaluation/CategoryForm';
-import type { QuestionRecord } from '../../types/question';
+
+type QuestionRecord = {
+  question_id: string;
+  question_text: string;
+  is_required: boolean;
+  category: string;
+  question_type: string;
+};
 
 const CATEGORIES = [
   'Commitment',

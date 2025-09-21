@@ -4,6 +4,26 @@ const { body } = require('express-validator');
 const authController = require('../controllers/authController.new');
 const authMiddleware = require('../middleware/authMiddleware');
 
+// Debug middleware for auth routes
+router.use((req, res, next) => {
+  console.log(`[AUTH ROUTE] ${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  console.log('  Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('  Cookies:', req.cookies);
+  console.log('  Authenticated User:', req.user ? `ID: ${req.user.id}` : 'None');
+  
+  // Log request body for non-GET requests
+  if (req.method !== 'GET' && req.body) {
+    console.log('  Request Body:', JSON.stringify(req.body, null, 2));
+  }
+  
+  // Log query parameters if any
+  if (Object.keys(req.query).length > 0) {
+    console.log('  Query Params:', JSON.stringify(req.query, null, 2));
+  }
+  
+  next();
+});
+
 // Validation middleware
 const validateSignup = [
   body('firstName').trim().notEmpty().withMessage('First name is required'),

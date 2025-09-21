@@ -7,6 +7,10 @@ const { USER_TYPES, USER_ROLES } = userService;
  */
 const listUsers = async (req, res) => {
   try {
+    console.log('[USERS CONTROLLER] listUsers called with query:', req.query);
+    console.log('[USERS CONTROLLER] Request body:', req.body);
+    
+    // Read from req.body instead of req.query since the validation middleware moves query params to body
     const { 
       userType, 
       role, 
@@ -14,7 +18,16 @@ const listUsers = async (req, res) => {
       isActive = true,
       limit = 100,
       offset = 0
-    } = req.query;
+    } = req.body;
+
+    console.log('[USERS CONTROLLER] Fetching users with filters:', {
+      userType,
+      role,
+      departmentId,
+      isActive,
+      limit,
+      offset
+    });
 
     const users = await userService.listUsers({
       userType,
@@ -25,12 +38,27 @@ const listUsers = async (req, res) => {
       offset: parseInt(offset, 10)
     });
 
-    return res.status(200).json({
+    console.log(`[USERS CONTROLLER] Found ${users.length} users`);
+    
+    const response = {
       status: 'success',
       data: { users }
-    });
+    };
+    
+    console.log('[USERS CONTROLLER] Sending response:', JSON.stringify(response, null, 2));
+    
+    return res.status(200).json(response);
   } catch (error) {
-    console.error('List users error:', error);
+    console.error('[USERS CONTROLLER] Error in listUsers:', error);
+    
+    // Log the full error for debugging
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code
+    });
+    
     return res.status(500).json({
       status: 'error',
       message: 'Internal server error',
@@ -109,8 +137,8 @@ const createUser = async (req, res) => {
     });
   }
 
-  // Normalize role
-  const normalizedRole = role ? role.toLowerCase() : null;
+  // Normalize role for comparison (case-insensitive)
+  const normalizedRole = role ? role.charAt(0).toUpperCase() + role.slice(1).toLowerCase() : null;
   if (userType === USER_TYPES.USER && normalizedRole && !Object.values(USER_ROLES).includes(normalizedRole)) {
     return res.status(400).json({
       status: 'error',

@@ -18,15 +18,50 @@ const { isLoggedIn } = require('./middleware/authMiddleware');
 // Initialize Express app
 const app = express();
 
+// Create a router for protected routes
+const protectedRouter = express.Router();
+
+// Debug middleware for protected routes
+protectedRouter.use((req, res, next) => {
+  console.log(`[PROTECTED ROUTE] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Apply isLoggedIn middleware to all routes on the protected router
+protectedRouter.use((req, res, next) => {
+  console.log('[PROTECTED ROUTE] Checking authentication...');
+  // Call the actual isLoggedIn middleware
+  isLoggedIn(req, res, next);
+});
+
 // Trust proxy if behind a reverse proxy (e.g., nginx, Heroku)
 app.enable('trust proxy');
+
+// Log all incoming requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  console.log('  Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('  Query:', JSON.stringify(req.query, null, 2));
+  console.log('  Body:', JSON.stringify(req.body, null, 2));
+  next();
+});
 
 // Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-type'],
+  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
+  maxAge: 86400 // 24 hours
+}));
+
+// Handle preflight requests
+app.options('*', cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-type']
 }));
 
 // Parse JSON bodies
@@ -47,21 +82,33 @@ require('./config/db');
 // API routes
 const API_PREFIX = '/api/v1';
 
-// Authentication routes
+
+// Public routes
 app.use(`${API_PREFIX}/auth`, authRoutes);
 
-// User management routes
-app.use(`${API_PREFIX}/users`, usersRoutes);
+// Make department search public
+app.use(`${API_PREFIX}/departments/search`, (req, res, next) => {
+  // Create a new request object that points to the departments controller
+  req.url = req.url.replace(/^\/api\/v1\/departments/, '');
+  departmentsRoutes(req, res, next);
+});
 
-// Other API routes
-// Mount the new questions routes
-app.use(`${API_PREFIX}/questions`, questionsRoutes);
+// Protected routes (require authentication)
+console.log('[SERVER] Registering protected routes...');
 
-// Deprecate old questions routes if necessary, or remove them.
-// For now, we are replacing it directly.
-app.use(`${API_PREFIX}/evaluations`, evaluationsRoutes);
-app.use(`${API_PREFIX}/reports`, reportsRoutes);
-app.use(`${API_PREFIX}/departments`, departmentsRoutes);
+// Mount the protected router with the API prefix
+console.log(`[SERVER] Mounting protected router at ${API_PREFIX}`);
+
+// Register routes on the protected router
+protectedRouter.use('/users', usersRoutes);
+protectedRouter.use('/questions', questionsRoutes);
+protectedRouter.use('/evaluations', evaluationsRoutes);
+protectedRouter.use('/reports', reportsRoutes);
+protectedRouter.use('/departments', departmentsRoutes);
+
+// Mount the protected router under the API prefix
+app.use(API_PREFIX, protectedRouter);
+console.log('[SERVER] All protected routes registered and mounted');
 
 // Health check endpoint
 app.get(`${API_PREFIX}/health`, (req, res) => {
@@ -131,7 +178,5 @@ process.on('SIGTERM', () => {
     console.log('💥 Process terminated!');
   });
 });
-
-module.exports = app;
 
 module.exports = app;

@@ -295,26 +295,75 @@ const login = async (req, res) => {
  * @route GET /api/auth/me
  */
 const getProfile = async (req, res) => {
+  console.log('[AUTH CONTROLLER] getProfile called');
+  console.log('  Request user:', req.user);
+  console.log('  Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('  Cookies:', req.cookies);
+  
   try {
-    const userId = req.user.id; // From JWT middleware
-    const user = await userService.findUserById(userId);
+    // Check if user is authenticated
+    if (!req.user || !req.user.user_id) {
+      console.error('[AUTH CONTROLLER] No authenticated user found in request');
+      console.log('  Request user:', req.user);
+      console.log('  Request headers:', req.headers);
+      console.log('  Request cookies:', req.cookies);
+      return res.status(401).json({
+        status: 'error',
+        message: 'User not authenticated'
+      });
+    }
+
+    console.log('[AUTH CONTROLLER] User ID from token:', req.user.user_id);
+    
+    // Find user in database
+    const user = await userService.findUserById(req.user.user_id);
     
     if (!user) {
+      console.error(`[AUTH CONTROLLER] User with ID ${req.user.user_id} not found in database`);
       return res.status(404).json({
         status: 'error',
         message: 'User not found'
       });
     }
+    
+    console.log('[AUTH CONTROLLER] User found in database:', user.user_id, user.email);
+
+    // Format the response to match the expected client format
+    const userResponse = {
+      id: user.user_id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      middleInitial: user.middle_initial,
+      userType: user.user_type,
+      role: user.role,
+      departmentId: user.department_id,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at
+    };
 
     return res.status(200).json({
       status: 'success',
-      data: { user }
+      data: { user: userResponse }
     });
   } catch (error) {
-    console.error('Get profile error:', error);
+    console.error('[AUTH CONTROLLER] Get profile error:', error);
+    console.error('  Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      request: {
+        method: req.method,
+        url: req.originalUrl,
+        headers: req.headers,
+        cookies: req.cookies,
+        user: req.user
+      }
+    });
+    
     return res.status(500).json({
       status: 'error',
-      message: 'Internal server error',
+      message: 'Internal server error while fetching profile',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

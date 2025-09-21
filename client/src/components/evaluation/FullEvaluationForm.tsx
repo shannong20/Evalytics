@@ -7,9 +7,15 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import type { QuestionRecord } from '../../types/question';
 
 export type AnswerMap = Record<string, string | number>;
+
+type QuestionRecord = {
+  question_id: string;
+  question_text: string;
+  is_required: boolean;
+  category: string;
+};
 
 const CATEGORY_ORDER = [
   'Commitment',

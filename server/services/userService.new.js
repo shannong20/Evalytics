@@ -214,31 +214,32 @@ async function updateUserPassword(userId, newPassword) {
  * @returns {Promise<Array>} List of users
  */
 async function listUsers(filters = {}) {
+  console.log('[USER SERVICE] listUsers called with filters:', JSON.stringify(filters, null, 2));
+  
   const { 
     userType, 
     role, 
     departmentId, 
-    isActive = true,
     limit = 100,
     offset = 0
   } = filters;
   
-  const whereClauses = ['is_active = $1'];
-  const params = [isActive];
-  let paramIndex = 2;
+  const whereClauses = [];
+  const params = [];
+  let paramIndex = 1;
   
   if (userType) {
-    whereClauses.push(`user_type = $${paramIndex++}`);
+    whereClauses.push(`u.user_type = $${paramIndex++}`);
     params.push(userType);
   }
   
   if (role) {
-    whereClauses.push(`role = $${paramIndex++}`);
+    whereClauses.push(`u.role = $${paramIndex++}`);
     params.push(role);
   }
   
   if (departmentId) {
-    whereClauses.push(`department_id = $${paramIndex++}`);
+    whereClauses.push(`u.department_id = $${paramIndex++}`);
     params.push(departmentId);
   }
   
@@ -246,21 +247,36 @@ async function listUsers(filters = {}) {
   
   const sql = `
     SELECT 
-      user_id, first_name, last_name, middle_initial, email,
-      user_type, role, department_id
-    FROM users
+      u.user_id, u.first_name, u.last_name, u.middle_initial, u.email,
+      u.user_type, u.role, u.department_id,
+      d.name as department_name
+    FROM Users u
+    LEFT JOIN Department d ON u.department_id = d.department_id
     ${whereClause}
-    ORDER BY last_name, first_name
+    ORDER BY u.last_name, u.first_name
     LIMIT $${paramIndex++} OFFSET $${paramIndex}
   `;
   
-  params.push(limit, offset);
+  params.push(parseInt(limit, 10), parseInt(offset, 10));
+  
+  console.log('[USER SERVICE] Generated SQL query:', sql);
+  console.log('[USER SERVICE] Query parameters:', params);
   
   try {
-    const { rows } = await query(sql, params);
-    return rows;
+    console.log('[USER SERVICE] Executing database query...');
+    const result = await query(sql, params);
+    console.log(`[USER SERVICE] Query successful, found ${result.rows.length} users`);
+    return result.rows;
   } catch (error) {
-    console.error('Error listing users:', error);
+    console.error('[USER SERVICE] Error executing query:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      hint: error.hint,
+      position: error.position,
+      query: sql,
+      params: params
+    });
     throw error;
   }
 }

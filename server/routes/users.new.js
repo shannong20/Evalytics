@@ -15,7 +15,7 @@ const validateCreateUser = [
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
   body('userType').isIn(Object.values(USER_TYPES)).withMessage('Invalid user type'),
   body('role')
-    .if((value, { req }) => req.body.userType === 'user')
+    .if((value, { req }) => req.body.userType === USER_TYPES.USER)
     .isIn(Object.values(USER_ROLES)).withMessage(`Role must be one of: ${Object.values(USER_ROLES).join(', ')}`),
   body('departmentId').optional().isInt({ gt: 0 }).withMessage('Invalid department ID'),
 ];
@@ -37,17 +37,34 @@ const validateUpdateUser = [
 // Apply authentication middleware to all routes
 router.use(authMiddleware.protect);
 
-// Apply admin middleware to all routes except GET /me
+// Apply admin middleware to all routes except GET /me and GET /
 router.use((req, res, next) => {
-  if (req.method === 'GET' && req.path === '/' || req.path.endsWith('/me')) {
+  // Allow GET /me and GET / for all authenticated users
+  if (req.method === 'GET' && (req.path === '/' || req.path.endsWith('/me'))) {
     return next();
   }
-  authMiddleware.restrictTo('admin')(req, res, next);
+  
+  // Check specifically for user_type = 'Admin' (case-sensitive)
+  if (req.user?.user_type === 'Admin') {
+    return next();
+  }
+  
+  // If not an admin, send 403
+  return res.status(403).json({
+    status: 'error',
+    message: 'You must be an admin to perform this action'
+  });
 });
 
 // List users with optional filters
 router.get('/', [
-  // Validation
+  // Validation middleware for query params (not body)
+  (req, res, next) => {
+    // Move query params to body for validation
+    req.body = { ...req.query };
+    next();
+  },
+  // Validation rules
   body('userType').optional().isIn(Object.values(USER_TYPES)),
   body('role').optional().isIn(Object.values(USER_ROLES)),
   body('departmentId').optional().isInt({ gt: 0 }),
