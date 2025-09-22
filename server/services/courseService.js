@@ -9,12 +9,12 @@ const { query } = require('../config/db');
  * @returns {Promise<Array<{course_id:number, course_code:string, course_title:string}>>}
  */
 async function listCoursesByEvaluatee(evaluateeId) {
-  const id = Number(evaluateeId);
-  if (!Number.isInteger(id) || id <= 0) return [];
+  const id = (evaluateeId || '').toString();
+  if (!id) return [];
 
   // 1) Find evaluatee's department
   const { rows: userRows } = await query(
-    `SELECT department_id FROM users WHERE user_id = $1 LIMIT 1`,
+    `SELECT department_id FROM users WHERE user_id::text = $1::text LIMIT 1`,
     [id]
   );
   if (!userRows || userRows.length === 0) return [];

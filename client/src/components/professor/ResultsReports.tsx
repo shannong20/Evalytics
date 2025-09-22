@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -17,32 +18,27 @@ import {
   Award
 } from 'lucide-react';
 
-// Mock data for different evaluation types
-const studentResults = {
-  overall: 4.6,
-  responses: 187,
-  data: [
-    { category: 'Teaching Effectiveness', score: 4.7, responses: 187 },
-    { category: 'Course Content', score: 4.6, responses: 187 },
-    { category: 'Communication', score: 4.5, responses: 187 },
-    { category: 'Assessment Methods', score: 4.6, responses: 187 },
-    { category: 'Availability', score: 4.8, responses: 187 }
-  ],
-  comments: [
-    { comment: "Excellent teaching style and very approachable", sentiment: "positive" },
-    { comment: "Course materials are well organized and helpful", sentiment: "positive" },
-    { comment: "Could use more real-world examples", sentiment: "constructive" },
-    { comment: "Great feedback on assignments", sentiment: "positive" }
-  ],
-  trends: [
-    { semester: 'Fall 2022', score: 4.2 },
-    { semester: 'Spring 2023', score: 4.4 },
-    { semester: 'Fall 2023', score: 4.5 },
-    { semester: 'Spring 2024', score: 4.6 }
-  ]
+// Use absolute API base to avoid requiring Vite proxy during dev
+const API_BASE = (import.meta as any)?.env?.VITE_SERVER_URL || 'http://localhost:5000';
+
+// Live student analytics state (replaces mock data)
+type StudentResults = {
+  overall: number;
+  responses: number;
+  data: Array<{ category: string; score: number; responses?: number }>;
+  comments: Array<{ comment: string; sentiment: string }>;
+  trends: Array<{ semester: string; score: number }>;
 };
 
-const peerResults = {
+type SimpleResults = {
+  overall: number;
+  responses: number;
+  data: Array<{ category: string; score: number; responses?: number }>;
+  comments: Array<{ comment: string; sentiment: string }>;
+  trends: Array<{ semester: string; score: number }>;
+};
+
+const peerResultsFallback: SimpleResults = {
   overall: 4.5,
   responses: 12,
   data: [
@@ -51,14 +47,15 @@ const peerResults = {
     { category: 'Leadership', score: 4.3, responses: 12 },
     { category: 'Communication', score: 4.6, responses: 12 }
   ],
-  feedback: [
-    { reviewer: "Anonymous Peer", feedback: "Excellent researcher with strong collaborative skills" },
-    { reviewer: "Anonymous Peer", feedback: "Very knowledgeable and always willing to help" },
-    { reviewer: "Anonymous Peer", feedback: "Could take more initiative in department meetings" }
-  ]
+  comments: [
+    { comment: 'Excellent researcher with strong collaborative skills', sentiment: 'positive' },
+    { comment: 'Very knowledgeable and always willing to help', sentiment: 'positive' },
+    { comment: 'Could take more initiative in department meetings', sentiment: 'constructive' }
+  ],
+  trends: []
 };
 
-const supervisorResults = {
+const supervisorResultsFallback: SimpleResults = {
   overall: 4.4,
   responses: 1,
   data: [
@@ -67,7 +64,10 @@ const supervisorResults = {
     { category: 'Service Contribution', score: 4.2 },
     { category: 'Professional Development', score: 4.6 }
   ],
-  feedback: "Dr. Santos continues to demonstrate excellent teaching abilities and shows strong commitment to research. Recommendations for increased involvement in university-wide service activities."
+  comments: [
+    { comment: 'Great teaching abilities and strong commitment to research.', sentiment: 'positive' }
+  ],
+  trends: []
 };
 
 const selfResults = {
@@ -91,6 +91,151 @@ const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3
 
 export default function ResultsReports() {
   const [activeTab, setActiveTab] = useState('students');
+  const [studentResults, setStudentResults] = useState<StudentResults | null>(null);
+  const [peerResults, setPeerResults] = useState<SimpleResults | null>(null);
+  const [supervisorResults, setSupervisorResults] = useState<SimpleResults | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { token } = useAuth();
+
+  useEffect(() => {
+    let isMounted = true;
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+        if (!token) return; // wait for auth token before calling protected endpoints
+        // 1) Get current user
+        const meRes = await fetch(`${API_BASE}/api/v1/auth/me`, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!meRes.ok) throw new Error(`auth/me failed: ${meRes.status}`);
+        const meJson = await meRes.json();
+        const userId = meJson?.data?.user?.user_id || meJson?.user?.user_id || meJson?.user_id;
+        if (!userId) throw new Error('user_id not found in profile');
+        // 2) Get analytics for this professor (student-sourced only)
+        // Add evaluator_user_type=student so peer/supervisor comments don't mix into Student tab
+        const aRes = await fetch(`${API_BASE}/api/v1/reports/analytics/professor?professor_user_id=${encodeURIComponent(String(userId))}&evaluator_user_type=student`, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!aRes.ok) throw new Error(`analytics failed: ${aRes.status}`);
+        const aJson = await aRes.json();
+
+        const topline = aJson?.json_output?.topline || {};
+        const cats = aJson?.json_output?.category_breakdown || [];
+        const trend = aJson?.json_output?.trend || [];
+        const comments = aJson?.json_output?.comments || [];
+        const qstats = aJson?.json_output?.question_stats || [];
+
+        const overall = typeof topline.overall_average === 'number' ? topline.overall_average : Number(topline.overall_average || 0);
+        const data = cats.map((c: any) => ({
+          category: String(c.name || ''),
+          score: c.avg_score != null ? Number(c.avg_score) : 0,
+          responses: c.responses != null ? Number(c.responses) : undefined,
+        }));
+        const trends = (trend || []).map((t: any) => ({
+          semester: String(t.semester || ''),
+          score: t.avg_score != null ? Number(t.avg_score) : 0,
+        }));
+        const cmts = (comments || []).map((c: any) => ({
+          comment: String(c.text || ''),
+          sentiment: String(c.sentiment || 'neutral'),
+        }));
+        const totalResponses = Array.isArray(qstats)
+          ? qstats.reduce((acc: number, q: any) => acc + (q?.responses ? Number(q.responses) : 0), 0)
+          : 0;
+
+        const result: StudentResults = {
+          overall,
+          responses: totalResponses,
+          data,
+          comments: cmts,
+          trends,
+        };
+        if (isMounted) setStudentResults(result);
+
+        // 3) Peer analytics (evaluations from faculty peers)
+        try {
+          const peerRes = await fetch(`${API_BASE}/api/v1/reports/analytics/professor?professor_user_id=${encodeURIComponent(String(userId))}&evaluator_user_type=faculty`, {
+            credentials: 'include',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          if (peerRes.ok) {
+            const pJson = await peerRes.json();
+            const pTop = pJson?.json_output?.topline || {};
+            const pCats = pJson?.json_output?.category_breakdown || [];
+            const pTrend = pJson?.json_output?.trend || [];
+            const pComments = pJson?.json_output?.comments || [];
+            const pQstats = pJson?.json_output?.question_stats || [];
+
+            const pOverall = pTop?.overall_average != null ? Number(pTop.overall_average) : 0;
+            const pData = pCats.map((c: any) => ({
+              category: String(c.name || ''),
+              score: c.avg_score != null ? Number(c.avg_score) : 0,
+              responses: c.responses != null ? Number(c.responses) : undefined,
+            }));
+            const pTrends = (pTrend || []).map((t: any) => ({
+              semester: String(t.semester || ''),
+              score: t.avg_score != null ? Number(t.avg_score) : 0,
+            }));
+            const pCmts = (pComments || []).map((c: any) => ({
+              comment: String(c.text || ''),
+              sentiment: String(c.sentiment || 'neutral'),
+            }));
+            const pResponses = Array.isArray(pQstats)
+              ? pQstats.reduce((acc: number, q: any) => acc + (q?.responses ? Number(q.responses) : 0), 0)
+              : 0;
+            if (isMounted) setPeerResults({ overall: pOverall, responses: pResponses, data: pData, comments: pCmts, trends: pTrends });
+          } else {
+            // leave as null -> fallback UI will be used
+          }
+        } catch (_) {}
+
+        // 4) Supervisor analytics (evaluations from supervisors)
+        try {
+          const supRes = await fetch(`${API_BASE}/api/v1/reports/analytics/professor?professor_user_id=${encodeURIComponent(String(userId))}&evaluator_user_type=supervisor`, {
+            credentials: 'include',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+          if (supRes.ok) {
+            const sJson = await supRes.json();
+            const sTop = sJson?.json_output?.topline || {};
+            const sCats = sJson?.json_output?.category_breakdown || [];
+            const sTrend = sJson?.json_output?.trend || [];
+            const sComments = sJson?.json_output?.comments || [];
+            const sQstats = sJson?.json_output?.question_stats || [];
+
+            const sOverall = sTop?.overall_average != null ? Number(sTop.overall_average) : 0;
+            const sData = sCats.map((c: any) => ({
+              category: String(c.name || ''),
+              score: c.avg_score != null ? Number(c.avg_score) : 0,
+              responses: c.responses != null ? Number(c.responses) : undefined,
+            }));
+            const sTrends = (sTrend || []).map((t: any) => ({
+              semester: String(t.semester || ''),
+              score: t.avg_score != null ? Number(t.avg_score) : 0,
+            }));
+            const sCmts = (sComments || []).map((c: any) => ({
+              comment: String(c.text || ''),
+              sentiment: String(c.sentiment || 'neutral'),
+            }));
+            const sResponses = Array.isArray(sQstats)
+              ? sQstats.reduce((acc: number, q: any) => acc + (q?.responses ? Number(q.responses) : 0), 0)
+              : 0;
+            if (isMounted) setSupervisorResults({ overall: sOverall, responses: sResponses, data: sData, comments: sCmts, trends: sTrends });
+          }
+        } catch (_) {}
+      } catch (err: any) {
+        if (isMounted) setError(err?.message || 'Failed to load analytics');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    load();
+    return () => { isMounted = false; };
+  }, [token]);
 
   const handleDownloadReport = (type) => {
     // Simulate report download
@@ -131,13 +276,15 @@ export default function ResultsReports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Students</p>
-                <p className="text-2xl font-bold text-gray-900">{studentResults.overall}</p>
-                <p className="text-xs text-gray-500">{studentResults.responses} responses</p>
+                <p className="text-2xl font-bold text-gray-900">{studentResults?.overall?.toFixed ? studentResults.overall.toFixed(1) : (studentResults?.overall ?? 'N/A')}</p>
+                <p className="text-xs text-gray-500">{studentResults?.responses ?? 0} responses</p>
               </div>
               <div className="w-10 h-10 bg-gradient-to-r from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
                 <Users className="w-5 h-5 text-blue-600" />
               </div>
             </div>
+            {loading && <p className="text-xs text-gray-500 mt-2">Loading…</p>}
+            {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
           </CardContent>
         </Card>
 
@@ -146,8 +293,8 @@ export default function ResultsReports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Peers</p>
-                <p className="text-2xl font-bold text-gray-900">{peerResults.overall}</p>
-                <p className="text-xs text-gray-500">{peerResults.responses} reviews</p>
+                <p className="text-2xl font-bold text-gray-900">{(peerResults?.overall ?? peerResultsFallback.overall).toFixed ? (peerResults?.overall ?? peerResultsFallback.overall).toFixed(1) : (peerResults?.overall ?? peerResultsFallback.overall)}</p>
+                <p className="text-xs text-gray-500">{peerResults?.responses ?? peerResultsFallback.responses} reviews</p>
               </div>
               <div className="w-10 h-10 bg-gradient-to-r from-green-100 to-green-200 rounded-lg flex items-center justify-center">
                 <UserCheck className="w-5 h-5 text-green-600" />
@@ -161,8 +308,8 @@ export default function ResultsReports() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Supervisor</p>
-                <p className="text-2xl font-bold text-gray-900">{supervisorResults.overall}</p>
-                <p className="text-xs text-gray-500">{supervisorResults.responses} review</p>
+                <p className="text-2xl font-bold text-gray-900">{(supervisorResults?.overall ?? supervisorResultsFallback.overall).toFixed ? (supervisorResults?.overall ?? supervisorResultsFallback.overall).toFixed(1) : (supervisorResults?.overall ?? supervisorResultsFallback.overall)}</p>
+                <p className="text-xs text-gray-500">{supervisorResults?.responses ?? supervisorResultsFallback.responses} review</p>
               </div>
               <div className="w-10 h-10 bg-gradient-to-r from-purple-100 to-purple-200 rounded-lg flex items-center justify-center">
                 <User className="w-5 h-5 text-purple-600" />
@@ -206,7 +353,7 @@ export default function ResultsReports() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={studentResults.data}>
+                  <BarChart data={studentResults?.data ?? []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="category" angle={-45} textAnchor="end" height={80} />
                     <YAxis domain={[3, 5]} />
@@ -224,7 +371,7 @@ export default function ResultsReports() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={studentResults.trends}>
+                  <LineChart data={studentResults?.trends ?? []}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="semester" />
                     <YAxis domain={[3.5, 5]} />
@@ -264,11 +411,11 @@ export default function ResultsReports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {studentResults.data.map((item, index) => (
+                  {(studentResults?.data ?? []).map((item, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-medium">{item.category}</TableCell>
                       <TableCell>{item.score.toFixed(1)}</TableCell>
-                      <TableCell>{item.responses}</TableCell>
+                      <TableCell>{item.responses ?? '-'}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
                           <div className="w-16 h-2 bg-gray-200 rounded-full">
@@ -294,7 +441,7 @@ export default function ResultsReports() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {studentResults.comments.map((item, index) => (
+                {(studentResults?.comments ?? []).map((item, index) => (
                   <div key={index} className="p-3 bg-gray-50 rounded-lg">
                     <p className="text-gray-800">{item.comment}</p>
                     <Badge className={`${getSentimentColor(item.sentiment)} mt-2`}>
@@ -317,7 +464,7 @@ export default function ResultsReports() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={peerResults.data}>
+                  <BarChart data={(peerResults?.data ?? peerResultsFallback.data)}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="category" angle={-45} textAnchor="end" height={80} />
                     <YAxis domain={[3, 5]} />
@@ -337,7 +484,7 @@ export default function ResultsReports() {
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={peerResults.data}
+                      data={(peerResults?.data ?? peerResultsFallback.data)}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
@@ -346,7 +493,7 @@ export default function ResultsReports() {
                       fill="#8884d8"
                       dataKey="score"
                     >
-                      {peerResults.data.map((entry, index) => (
+                      {(peerResults?.data ?? peerResultsFallback.data).map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
@@ -376,10 +523,10 @@ export default function ResultsReports() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {peerResults.feedback.map((item, index) => (
+                {(peerResults?.comments ?? peerResultsFallback.comments).map((item, index) => (
                   <div key={index} className="p-4 bg-green-50 rounded-lg border border-green-200">
-                    <p className="text-gray-800 mb-2">"{item.feedback}"</p>
-                    <p className="text-sm text-green-700 font-medium">— {item.reviewer}</p>
+                    <p className="text-gray-800 mb-2">"{item.comment}"</p>
+                    <Badge className={`${getSentimentColor(item.sentiment)} mt-1`}>{item.sentiment}</Badge>
                   </div>
                 ))}
               </div>
@@ -397,7 +544,7 @@ export default function ResultsReports() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={supervisorResults.data}>
+                  <BarChart data={(supervisorResults?.data ?? supervisorResultsFallback.data)}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="category" angle={-45} textAnchor="end" height={80} />
                     <YAxis domain={[3, 5]} />
@@ -414,7 +561,7 @@ export default function ResultsReports() {
                 <CardDescription>Overall assessment metrics</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {supervisorResults.data.map((item, index) => (
+                {(supervisorResults?.data ?? supervisorResultsFallback.data).map((item, index) => (
                   <div key={index} className="flex justify-between items-center">
                     <span className="font-medium text-gray-700">{item.category}</span>
                     <div className="flex items-center space-x-2">
@@ -450,8 +597,13 @@ export default function ResultsReports() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                <p className="text-gray-800 leading-relaxed">{supervisorResults.feedback}</p>
+              <div className="space-y-3">
+                {(supervisorResults?.comments ?? supervisorResultsFallback.comments).map((c, idx) => (
+                  <div key={idx} className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <p className="text-gray-800 leading-relaxed">{c.comment}</p>
+                    <Badge className={`${getSentimentColor(c.sentiment)} mt-2`}>{c.sentiment}</Badge>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

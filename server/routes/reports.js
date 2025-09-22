@@ -6,6 +6,9 @@ const authMiddleware = require('../middleware/authMiddleware');
 // Protect all report routes
 router.use(authMiddleware.protect);
 
+// Professor analytics (real DB)
+router.get('/analytics/professor', reportsController.getProfessorAnalytics);
+
 // Overall average per evaluatee (from Summary_Report)
 router.get('/overall', reportsController.getOverallAverages);
 

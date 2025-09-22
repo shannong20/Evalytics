@@ -126,11 +126,16 @@ export default function CategoryForm({ category, answers, onAnswerChange, onQues
                     {[1,2,3,4,5].map((rating) => {
                       const selected = (answers[q.question_id]?.toString() || '') === rating.toString();
                       return (
-                        <div key={rating} className="w-full">
-                          <RadioGroupItem value={rating.toString()} id={`${q.question_id}_${rating}`} className="sr-only" />
+                        <div key={rating} className="w-full relative">
+                          {/* Place the radio input inside a relative container and hide without using sr-only to avoid focus-driven scroll */}
+                          <RadioGroupItem 
+                            value={rating.toString()} 
+                            id={`${q.question_id}_${rating}`} 
+                            className="absolute inset-0 opacity-0 pointer-events-none"
+                          />
                           <Label
                             htmlFor={`${q.question_id}_${rating}`}
-                            className={`w-full inline-flex items-center justify-center px-3 py-2 rounded-md border text-sm cursor-pointer transition select-none ${selected ? 'bg-blue-50 border-blue-500 text-blue-700 font-medium' : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300'}`}
+                            className={`w-full inline-flex items-center justify-center px-3 h-10 rounded-md border text-sm cursor-pointer transition select-none whitespace-nowrap ${selected ? 'bg-blue-50 border-blue-500 text-blue-700 font-medium' : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300'}`}
                           >
                             {rating === 1 ? '1 - Poor' : rating === 2 ? '2 - Fair' : rating === 3 ? '3 - Satisfactory' : rating === 4 ? '4 - Very Satisfactory' : '5 - Outstanding'}
                           </Label>

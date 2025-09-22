@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 
 // Base type for evaluation results
 interface BaseEvaluationResult {
-  id: number;
+  id: string;
   name: string;
   position: string;
   department: string;
@@ -71,7 +71,7 @@ type EvaluationResult = ProfessorEvaluationResult | NTPEvaluationResult;
 
 // Helper function to create professor evaluation results with proper typing
 const createProfessor = (
-  id: number, 
+  id: string, 
   name: string, 
   position: string, 
   department: string, 
@@ -95,7 +95,7 @@ const createProfessor = (
 
 // Helper function to create NTP evaluation results with proper typing
 const createNTP = (
-  id: number,
+  id: string,
   name: string,
   position: string,
   department: string,
@@ -133,7 +133,7 @@ const createNTP = (
 // Mock professor evaluation results
 const professorResults: ProfessorEvaluationResult[] = [
   createProfessor(
-    1,
+    '1',
     'Dr. Sarah Johnson',
     'Associate Professor',
     'Computer Science',
@@ -149,7 +149,7 @@ const professorResults: ProfessorEvaluationResult[] = [
     'down'
   ),
   createProfessor(
-    2,
+    '2',
     'Prof. Michael Chen',
     'Assistant Professor',
     'Computer Science',
@@ -165,7 +165,7 @@ const professorResults: ProfessorEvaluationResult[] = [
     'down'
   ),
   createProfessor(
-    3,
+    '3',
     'Dr. Maria Rodriguez',
     'Professor',
     'Computer Science',
@@ -185,7 +185,7 @@ const professorResults: ProfessorEvaluationResult[] = [
 // Mock NTP evaluation results
 const ntpResults: NTPEvaluationResult[] = [
   createNTP(
-    1,
+    '1',
     'Maria Santos',
     'Administrative Assistant',
     'Computer Science',
@@ -203,7 +203,7 @@ const ntpResults: NTPEvaluationResult[] = [
     'down'
   ),
   createNTP(
-    2,
+    '2',
     'John Lee',
     'IT Support Specialist',
     'Computer Science',
@@ -255,11 +255,135 @@ interface ChartData {
 type TabValue = 'faculty' | 'ntp' | 'comparison';
 
 export default function ResultsReports() {
-  const [selectedStaff, setSelectedStaff] = useState<EvaluationResult | null>(null);
-  const [currentTab, setCurrentTab] = useState<TabValue>('faculty');
-  const [filterType, setFilterType] = useState<'all' | 'professor' | 'ntp'>('all');
-  const [filterPeriod, setFilterPeriod] = useState<string>('current');
+  const [selectedStaff, setSelectedStaff] = useState(null as EvaluationResult | null);
+  const [currentTab, setCurrentTab] = useState('faculty' as TabValue);
+  const [filterType, setFilterType] = useState('all' as 'all' | 'professor' | 'ntp');
+  const [filterPeriod, setFilterPeriod] = useState('current');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Real API-backed data (preferred over mock when available)
+  const [apiProfessorResults, setApiProfessorResults] = useState([] as ProfessorEvaluationResult[]);
+  const [apiNtpResults] = useState([] as NTPEvaluationResult[]); // no NTP API yet
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null as string | null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+        // 1) Fetch faculty list
+        const facultyRes = await fetch('/api/v1/users/faculty', {
+          credentials: 'include',
+        });
+        if (!facultyRes.ok) throw new Error(`Faculty list failed: ${facultyRes.status}`);
+        const facultyJson = await facultyRes.json();
+        const faculty: Array<{ id: string; full_name: string; department: string | null }>
+          = facultyJson?.data?.faculty || [];
+
+        // 2) For each faculty, fetch analytics
+        const profs: ProfessorEvaluationResult[] = [];
+        for (const f of faculty) {
+          try {
+            const url = `/api/v1/reports/analytics/professor?professor_user_id=${encodeURIComponent(f.id)}&evaluator_user_type=supervisor`;
+            const aRes = await fetch(url, { credentials: 'include' });
+            if (!aRes.ok) throw new Error(`Analytics failed for ${f.id}: ${aRes.status}`);
+            const aJson = await aRes.json();
+            const topline = aJson?.json_output?.topline || {};
+            const trend = aJson?.json_output?.trend || [];
+            const comments = aJson?.json_output?.comments || [];
+            const cat = aJson?.json_output?.category_breakdown || [];
+
+            // derive trend label
+            let trendDir: 'up' | 'down' | 'neutral' = 'neutral';
+            if (trend && trend.length >= 2) {
+              const last = trend[trend.length - 1]?.avg_score ?? null;
+              const prev = trend[trend.length - 2]?.avg_score ?? null;
+              if (last != null && prev != null) {
+                trendDir = last > prev ? 'up' : last < prev ? 'down' : 'neutral';
+              }
+            }
+
+            // pick an evaluation date surrogate: latest comment date or latest trend label
+            const latestCommentDate = comments?.[0]?.date_submitted ? String(comments[0].date_submitted) : '';
+            const latestTerm = trend?.[trend.length - 1]?.semester ? String(trend[trend.length - 1].semester) : '';
+            const evaluationDate = latestCommentDate || latestTerm || '';
+
+            // simple score mapping: use overall average where specific category is not found
+            const findCat = (needle: string) => {
+              const row = cat.find((c: any) => String(c.name || '').toLowerCase().includes(needle));
+              return row?.avg_score != null ? Number(row.avg_score) : undefined;
+            };
+            const overall = topline?.overall_average != null ? Number(topline.overall_average) : 0;
+            const scores = {
+              teaching_effectiveness: findCat('teach') ?? overall,
+              professionalism: findCat('commit') ?? overall, // approximate mapping
+              research: findCat('research') ?? overall, // may not exist, fallback
+              leadership: findCat('manage') ?? overall,
+            };
+
+            profs.push(createProfessor(
+              String(f.id),
+              f.full_name || 'Faculty',
+              'Faculty',
+              f.department || 'N/A',
+              overall,
+              evaluationDate,
+              scores,
+              comments?.[0]?.text || '',
+              trendDir
+            ));
+          } catch (err) {
+            // continue others even if one professor fails
+            console.warn('Professor analytics failed:', err);
+          }
+        }
+
+        if (isMounted) setApiProfessorResults(profs);
+      } catch (err: any) {
+        if (isMounted) setError(err?.message || 'Failed to load data');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    load();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Derived datasets from API results
+  const departmentStats = React.useMemo(() => {
+    const byDept = new Map<string, { sum: number; count: number }>();
+    for (const p of apiProfessorResults) {
+      const dept = p.department || 'Unknown';
+      const entry = byDept.get(dept) || { sum: 0, count: 0 };
+      entry.sum += Number(p.overallScore || 0);
+      entry.count += 1;
+      byDept.set(dept, entry);
+    }
+    return Array.from(byDept.entries()).map(([department, v]) => ({
+      department,
+      avgScore: v.count ? Number((v.sum / v.count).toFixed(2)) : 0,
+      staffCount: v.count,
+    }));
+  }, [apiProfessorResults]);
+
+  const scoreDistributionReal = React.useMemo(() => {
+    const buckets = [
+      { label: '4.5-5.0', test: (x: number) => x >= 4.5 && x <= 5.0 },
+      { label: '4.0-4.4', test: (x: number) => x >= 4.0 && x < 4.5 },
+      { label: '3.5-3.9', test: (x: number) => x >= 3.5 && x < 4.0 },
+      { label: '3.0-3.4', test: (x: number) => x >= 3.0 && x < 3.5 },
+      { label: '< 3.0',  test: (x: number) => x < 3.0 },
+    ];
+    const counts = buckets.map(b => ({ range: b.label, count: 0, color: '#3b82f6' }));
+    for (const p of apiProfessorResults) {
+      const x = Number(p.overallScore || 0);
+      const idx = buckets.findIndex(b => b.test(x));
+      if (idx >= 0) counts[idx].count += 1;
+    }
+    return counts.filter(c => c.count > 0);
+  }, [apiProfessorResults]);
 
   // Type guard to check if a staff member is a professor
   const isProfessor = (staff: EvaluationResult): staff is ProfessorEvaluationResult => 
@@ -270,16 +394,19 @@ export default function ResultsReports() {
     staff.type === 'ntp';
 
   // Get all staff based on the current filter and search query
-  const filteredStaff = React.useMemo<EvaluationResult[]>(() => {
+  const filteredStaff = (React.useMemo(() => {
     let result: EvaluationResult[] = [];
     
     // Apply type filter
     if (filterType === 'all') {
-      result = [...professorResults, ...ntpResults];
+      result = [
+        ...apiProfessorResults,
+        ...apiNtpResults
+      ];
     } else if (filterType === 'professor') {
-      result = [...professorResults];
+      result = [...apiProfessorResults];
     } else {
-      result = [...ntpResults];
+      result = [...apiNtpResults];
     }
     
     // Apply search filter if query exists
@@ -293,7 +420,7 @@ export default function ResultsReports() {
     }
     
     return result;
-  }, [filterType, searchQuery]);
+  }, [filterType, searchQuery, apiProfessorResults, apiNtpResults])) as EvaluationResult[];
 
   const handleViewDetails = (staff: EvaluationResult) => {
     setSelectedStaff(staff);
@@ -502,6 +629,12 @@ export default function ResultsReports() {
 
       {/* Summary Statistics */}
       <div className="grid gap-4 md:grid-cols-4">
+        {loading && (
+          <div className="md:col-span-4 text-sm text-gray-600">Loading live results…</div>
+        )}
+        {error && (
+          <div className="md:col-span-4 text-sm text-red-600">{error}</div>
+        )}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Evaluations</CardTitle>
@@ -557,16 +690,7 @@ export default function ResultsReports() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={performanceTrends}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis domain={[3.5, 5]} />
-                <Tooltip />
-                <Line type="monotone" dataKey="professors" stroke="#3b82f6" name="Professors" />
-                <Line type="monotone" dataKey="ntp" stroke="#22c55e" name="NTP" />
-              </LineChart>
-            </ResponsiveContainer>
+            <div className="text-sm text-gray-600">No trend data available yet.</div>
           </CardContent>
         </Card>
 
@@ -579,24 +703,28 @@ export default function ResultsReports() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={scoreDistribution}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="count"
-                  label={({ range, count }) => `${range}: ${count}`}
-                >
-                  {scoreDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {scoreDistributionReal.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={scoreDistributionReal}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="count"
+                    label={({ range, count }) => `${range}: ${count}`}
+                  >
+                    {scoreDistributionReal.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-sm text-gray-600">No data available.</div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -610,15 +738,19 @@ export default function ResultsReports() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={departmentComparison}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="department" />
-              <YAxis domain={[3.5, 5]} />
-              <Tooltip />
-              <Bar dataKey="avgScore" fill="#3b82f6" name="Average Score" />
-            </BarChart>
-          </ResponsiveContainer>
+          {departmentStats.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={departmentStats}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="department" />
+                <YAxis domain={[3.0, 5]} />
+                <Tooltip />
+                <Bar dataKey="avgScore" fill="#3b82f6" name="Average Score" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="text-sm text-gray-600">No data available.</div>
+          )}
         </CardContent>
       </Card>
 

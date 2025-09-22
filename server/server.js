@@ -1,8 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const path = require('path');
 
 // Import routes
 const authRoutes = require('./routes/auth.new');
@@ -24,12 +24,16 @@ const app = express();
 app.enable('trust proxy');
 
 // Middleware
-app.use(cors({
+const corsOptions = {
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin'],
+  optionsSuccessStatus: 204,
+};
+app.use(cors(corsOptions));
+// Ensure preflight OPTIONS are handled for all routes
+app.options('*', cors(corsOptions));
 
 // Parse JSON bodies
 app.use(express.json({ limit: '10kb' }));
@@ -48,6 +52,15 @@ require('./config/db');
 
 // API routes
 const API_PREFIX = '/api/v1';
+
+// Debug: log incoming API requests (method, url, auth header presence)
+app.use(API_PREFIX, (req, res, next) => {
+  try {
+    const auth = req.headers?.authorization ? 'yes' : 'no';
+    console.log(`[API] ${req.method} ${req.originalUrl} auth:${auth}`);
+  } catch (_) {}
+  next();
+});
 
 // Authentication routes
 app.use(`${API_PREFIX}/auth`, authRoutes);
@@ -103,7 +116,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);

@@ -1,20 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
 import CategoryForm, { type AnswerMap } from '../evaluation/CategoryForm';
 import type { QuestionRecord, CategoryRecord } from '../../types/question';
+import { useAuth } from '../../context/AuthContext';
+import { Label } from '../ui/label';
+import { Textarea } from '../ui/textarea';
 
 type CategoryKey = string;
 
 export default function PeerEvaluation() {
-  const [peerName, setPeerName] = useState('');
+  const [comments, setComments] = useState('');
   const [answers, setAnswers] = useState({} as AnswerMap);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [categories, setCategories] = useState([] as CategoryRecord[]);
   const [questionsByCategory, setQuestionsByCategory] = useState({} as Record<CategoryKey, QuestionRecord[]>);
+  const [faculty, setFaculty] = useState([] as { id: number; name: string; department: string | null }[]);
+  const [selectedEvaluateeId, setSelectedEvaluateeId] = useState(null as string | null);
+  const [courses, setCourses] = useState([] as Array<{ course_id: number; course_code?: string; course_title?: string }>);
+  const [selectedCourseId, setSelectedCourseId] = useState(null as string | null);
+  const { user, token } = useAuth();
 
   useEffect(() => {
     const loadCategories = async () => {
@@ -29,8 +37,62 @@ export default function PeerEvaluation() {
         toast.error('Failed to load categories');
       }
     };
+    const loadFaculty = async () => {
+      try {
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const res = await fetch(`${baseUrl}/api/v1/users/faculty`, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) throw new Error('Failed to load faculty');
+        const json = await res.json();
+        const raw = Array.isArray(json?.data?.faculty) ? json.data.faculty : (Array.isArray(json?.data) ? json.data : []);
+        const evaluatorIds = [user?.id, (user as any)?.raw?.faculty_id]
+          .filter((v) => v != null && v !== '')
+          .map((v) => Number(v));
+        const normalized = raw
+          .map((r: any) => ({
+            id: Number(r.faculty_id ?? r.id ?? r.user_id),
+            name: r.full_name || `${r.firstname ?? ''} ${r.lastname ?? ''}`.trim(),
+            department: r.department ?? r.department_name ?? null,
+          }))
+          .filter((f: any) => !evaluatorIds.includes(Number(f.id)));
+        setFaculty(normalized);
+      } catch (e) {
+        console.error(e);
+        toast.error('Failed to load faculty list');
+      }
+    };
     loadCategories();
+    loadFaculty();
   }, []);
+
+  // Load courses when evaluatee changes
+  useEffect(() => {
+    let ignore = false;
+    async function loadCoursesForEvaluatee() {
+      if (!selectedEvaluateeId) {
+        setCourses([]);
+        setSelectedCourseId(null);
+        return;
+      }
+      try {
+        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+        const res = await fetch(`${baseUrl}/api/v1/courses?evaluateeId=${encodeURIComponent(String(selectedEvaluateeId))}`, {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) throw new Error('Failed to load courses');
+        const json = await res.json();
+        if (!ignore) setCourses(Array.isArray(json?.data) ? json.data : []);
+      } catch (e) {
+        console.error(e);
+        if (!ignore) setCourses([]);
+      }
+    }
+    loadCoursesForEvaluatee();
+    return () => { ignore = true; };
+  }, [selectedEvaluateeId, token]);
 
   const handleAnswerChange = (questionId: string, value: string | number) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
@@ -49,8 +111,12 @@ export default function PeerEvaluation() {
   }, [questionsByCategory, answers, categories]);
 
   const validate = () => {
-    if (!peerName.trim()) {
-      toast.error('Please enter the colleague’s name.');
+    if (!selectedEvaluateeId) {
+      toast.error('Please select the colleague to evaluate.');
+      return false;
+    }
+    if (!selectedCourseId) {
+      toast.error('Please select the course.');
       return false;
     }
     const missingRequired: string[] = [];
@@ -73,30 +139,35 @@ export default function PeerEvaluation() {
     if (!validate()) return;
     setIsSubmitting(true);
     try {
-      const records = (categories || []).flatMap((cat) => (questionsByCategory[cat.name as CategoryKey] || []).map((q) => ({
-        question_id: q.question_id,
-        category: q.category,
-        answer: answers[q.question_id],
-        type: 'rating_scale',
+      const responses = (categories || []).flatMap((cat) => (questionsByCategory[cat.name as CategoryKey] || []).map((q) => ({
+        question_id: Number(q.question_id),
+        rating: Number(answers[q.question_id]),
       })));
 
       const payload = {
-        subject: 'peer_evaluation',
-        peer_name: peerName.trim(),
-        responses: records,
-      };
+        evaluatee_id: Number(selectedEvaluateeId),
+        course_id: Number(selectedCourseId),
+        responses,
+        comments: String(comments || '').trim() || undefined,
+      } as any;
 
       const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
-      const res = await fetch(`${baseUrl}/api/evaluations`, {
+      const res = await fetch(`${baseUrl}/api/v1/evaluations`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(payload),
       });
 
       if (res.status === 201) {
         toast.success('Peer evaluation submitted successfully');
         setAnswers({} as AnswerMap);
-        setPeerName('');
+        setComments('');
+        setSelectedEvaluateeId(null);
+        setSelectedCourseId(null);
       } else {
         const problem = await res.json().catch(() => null);
         const message = problem?.error?.message || 'Failed to submit evaluation';
@@ -117,19 +188,41 @@ export default function PeerEvaluation() {
         <p className="text-gray-600 mt-1">Evaluate your colleague’s professional performance. Questions are loaded from the question bank.</p>
       </div>
 
-      {/* Peer name input */}
+      {/* Evaluatee and course selection */}
       <Card className="border-0 shadow-md">
         <CardHeader>
-          <CardTitle>Who are you evaluating?</CardTitle>
-          <CardDescription>Enter your colleague’s name.</CardDescription>
+          <CardTitle>Select Professor to Evaluate</CardTitle>
+          <CardDescription>Choose the colleague you would like to evaluate</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Input
-            placeholder="e.g. Prof. John Smith"
-            value={peerName}
-            onChange={(e) => setPeerName(e.target.value)}
-            className="border-gray-200 focus:border-blue-500"
-          />
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="text-sm text-gray-700 mb-1 block">Colleague</label>
+            <Select value={selectedEvaluateeId ?? ''} onValueChange={(v) => setSelectedEvaluateeId(v || null)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select faculty" />
+              </SelectTrigger>
+              <SelectContent>
+                {faculty.map((f) => (
+                  <SelectItem key={f.id} value={String(f.id)}>{f.name} {f.department ? `• ${f.department}` : ''}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm text-gray-700 mb-1 block">Course</label>
+            <Select value={selectedCourseId ?? ''} onValueChange={(v) => setSelectedCourseId(v || null)} disabled={!selectedEvaluateeId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={selectedEvaluateeId ? 'Select a course' : 'Select a colleague first'} />
+              </SelectTrigger>
+              <SelectContent>
+                {courses.map((c) => (
+                  <SelectItem key={c.course_id} value={String(c.course_id)}>
+                    {c.course_code ? `${c.course_code}${c.course_title ? ` • ${c.course_title}` : ''}` : (c.course_title || `Course ${c.course_id}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 
@@ -155,6 +248,27 @@ export default function PeerEvaluation() {
             />
           </div>
         ))}
+
+        {/* Additional Comments (optional) to match student/supervisor format */}
+        <Card className="border-0 shadow-md">
+          <CardHeader>
+            <CardTitle>Additional Comments</CardTitle>
+            <CardDescription>Optional. Share any feedback or remarks.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="peer-comments">Comments</Label>
+              <Textarea
+                id="peer-comments"
+                placeholder="Write any additional comments here..."
+                value={comments}
+                onChange={(e) => setComments(e.target.value)}
+                className="min-h-28"
+                disabled={isSubmitting}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="flex justify-end">
           <Button type="submit" disabled={isSubmitting} className="min-w-40">

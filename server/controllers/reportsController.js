@@ -1,4 +1,5 @@
 const reportService = require('../services/reportService');
+const { getProfessorAnalytics } = require('../services/analyticsService');
 
 /**
  * @route GET /api/v1/reports/overall
@@ -10,6 +11,45 @@ async function getOverallAverages(req, res) {
     return res.status(200).json({ status: 'success', data: rows });
   } catch (error) {
     console.error('getOverallAverages error:', error);
+    return res.status(500).json({ status: 'error', message: 'Internal server error' });
+  }
+
+}
+
+/**
+ * @route GET /api/v1/reports/analytics/professor
+ * Query params:
+ *  - professor_user_id (required)
+ *  - start_date (optional, YYYY-MM-DD)
+ *  - end_date (optional, YYYY-MM-DD)
+ *  - course_id_list (optional, CSV of ints, or omit for all)
+ *  - min_responses (optional, default 5)
+ */
+async function getProfessorAnalyticsController(req, res) {
+  try {
+    const professor_user_id = req.query.professor_user_id || null; // allow UUID or integer
+    const start_date = req.query.start_date || null;
+    const end_date = req.query.end_date || null;
+    const course_id_list = req.query.course_id_list || null; // CSV string or null
+    const min_responses = req.query.min_responses ? parseInt(req.query.min_responses, 10) : 5;
+    const evaluator_user_type = req.query.evaluator_user_type || null; // 'student' | 'faculty' | 'supervisor'
+
+    const result = await getProfessorAnalytics({
+      professor_user_id,
+      start_date,
+      end_date,
+      course_id_list,
+      min_responses,
+      evaluator_user_type,
+    });
+
+    if (result && result.error) {
+      return res.status(400).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('getProfessorAnalyticsController error:', error);
     return res.status(500).json({ status: 'error', message: 'Internal server error' });
   }
 }
@@ -51,4 +91,5 @@ module.exports = {
   getOverallAverages,
   getCategoryAverages,
   getTopRatedFaculty,
+  getProfessorAnalytics: getProfessorAnalyticsController,
 };

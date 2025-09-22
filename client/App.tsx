@@ -24,7 +24,7 @@ import MyEvaluations from './src/components/student/MyEvaluations';
 import ProfessorLayout from './src/components/professor/ProfessorLayout';
 import ProfessorDashboard from './src/components/professor/ProfessorDashboard';
 import SelfEvaluation from './src/components/professor/SelfEvaluation';
-import PeerEvaluation from './src/components/professor/PeerEvaluation';
+import PeerEvaluationFlow from './src/components/professor/PeerEvaluationFlow';
 import ResultsReports from './src/components/professor/ResultsReports';
 
 // Supervisor Components
@@ -77,7 +77,7 @@ export default function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<ProfessorDashboard />} />
             <Route path="self-evaluation" element={<SelfEvaluation />} />
-            <Route path="peer-evaluation" element={<PeerEvaluation />} />
+            <Route path="peer-evaluation" element={<PeerEvaluationFlow />} />
             <Route path="results" element={<ResultsReports />} />
           </Route>
 

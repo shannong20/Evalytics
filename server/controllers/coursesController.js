@@ -6,9 +6,8 @@ const courseService = require('../services/courseService');
  */
 async function listByEvaluatee(req, res) {
   try {
-    const raw = (req.query.evaluateeId || req.query.evaluatee_id || '').toString();
-    const evaluateeId = Number(raw);
-    if (!Number.isInteger(evaluateeId) || evaluateeId <= 0) {
+    const evaluateeId = (req.query.evaluateeId || req.query.evaluatee_id || '').toString().trim();
+    if (!evaluateeId) {
       return res.status(400).json({ status: 'error', message: 'A valid evaluateeId query parameter is required' });
     }
 

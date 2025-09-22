@@ -1,0 +1,313 @@
+{
+  "human_summary": "Overall average is 2.07 across 3 evaluations (min=1.00, max=3.60, median=1.60). Strongest category: Teaching for Independent Learning. Weakest category: Teaching for Independent Learning. Focus on strengthening Teaching for Independent Learning through targeted feedback, peer observation, or revised course activities. Sample sizes are limited in some areas (min_responses=5); interpret results with caution. 95% margin of error is 1.54.",
+  "json_output": {
+    "professor": {
+      "user_id": "27",
+      "full_name": "sdfghjkl d asdfghjk",
+      "department": "College of Computer Science",
+      "course_ids": [
+        1,
+        2
+      ]
+    },
+    "topline": {
+      "evaluations_count": 3,
+      "overall_average": 2.066666666666667,
+      "median": 1.6,
+      "min": 1,
+      "max": 3.6,
+      "stddev": 1.361371857110809,
+      "95_moe": 1.5405372800134085,
+      "performance_label": "Needs Improvement"
+    },
+    "category_breakdown": [
+      {
+        "category_id": "1",
+        "name": "Commitment",
+        "avg_score": 1.3333333333333333,
+        "responses": 3,
+        "stddev": 0.5773502691896257,
+        "performance_label": "Needs Improvement",
+        "low_sample": true
+      },
+      {
+        "category_id": "2",
+        "name": "Knowledge of Subject",
+        "avg_score": 2,
+        "responses": 3,
+        "stddev": 1,
+        "performance_label": "Needs Improvement",
+        "low_sample": true
+      },
+      {
+        "category_id": "3",
+        "name": "Teaching for Independent Learning",
+        "avg_score": 2.1666666666666665,
+        "responses": 6,
+        "stddev": 1.4719601443879744,
+        "performance_label": "Needs Improvement",
+        "low_sample": false
+      },
+      {
+        "category_id": "4",
+        "name": "Management for Learning",
+        "avg_score": 2.6666666666666665,
+        "responses": 3,
+        "stddev": 2.0816659994661326,
+        "performance_label": "Needs Improvement",
+        "low_sample": true
+      }
+    ],
+    "question_stats": [
+      {
+        "question_id": "1",
+        "text": "asdfghjkl;'",
+        "avg_rating": 1.3333333333333333,
+        "stddev": 0.5773502691896257,
+        "responses": 3,
+        "pct_below_3": 100,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "2",
+        "text": "asdfghjkl",
+        "avg_rating": 2,
+        "stddev": 1,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "3",
+        "text": "sdfghjkl;l",
+        "avg_rating": 2.3333333333333335,
+        "stddev": 1.5275252316519468,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "4",
+        "text": "sdfghjkl;",
+        "avg_rating": 2.6666666666666665,
+        "stddev": 2.0816659994661326,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 33.333333333333336
+      },
+      {
+        "question_id": "5",
+        "text": "dfrghjkl;",
+        "avg_rating": 2,
+        "stddev": 1.7320508075688772,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      }
+    ],
+    "trend": [
+      {
+        "semester": "Fall 2025",
+        "avg_score": 2.066666666666667,
+        "evaluations": 3
+      }
+    ],
+    "top_questions": [
+      {
+        "question_id": "4",
+        "text": "sdfghjkl;",
+        "avg_rating": 2.6666666666666665,
+        "stddev": 2.0816659994661326,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 33.333333333333336
+      },
+      {
+        "question_id": "3",
+        "text": "sdfghjkl;l",
+        "avg_rating": 2.3333333333333335,
+        "stddev": 1.5275252316519468,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "2",
+        "text": "asdfghjkl",
+        "avg_rating": 2,
+        "stddev": 1,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "5",
+        "text": "dfrghjkl;",
+        "avg_rating": 2,
+        "stddev": 1.7320508075688772,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "1",
+        "text": "asdfghjkl;'",
+        "avg_rating": 1.3333333333333333,
+        "stddev": 0.5773502691896257,
+        "responses": 3,
+        "pct_below_3": 100,
+        "pct_ge_4_5": 0
+      }
+    ],
+    "bottom_questions": [
+      {
+        "question_id": "1",
+        "text": "asdfghjkl;'",
+        "avg_rating": 1.3333333333333333,
+        "stddev": 0.5773502691896257,
+        "responses": 3,
+        "pct_below_3": 100,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "2",
+        "text": "asdfghjkl",
+        "avg_rating": 2,
+        "stddev": 1,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "5",
+        "text": "dfrghjkl;",
+        "avg_rating": 2,
+        "stddev": 1.7320508075688772,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "3",
+        "text": "sdfghjkl;l",
+        "avg_rating": 2.3333333333333335,
+        "stddev": 1.5275252316519468,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "4",
+        "text": "sdfghjkl;",
+        "avg_rating": 2.6666666666666665,
+        "stddev": 2.0816659994661326,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 33.333333333333336
+      }
+    ],
+    "comments": [
+      {
+        "evaluation_id": "10",
+        "date_submitted": "2025-09-21T00:33:13.040Z",
+        "text": "sobrang ganda(magturo)",
+        "sentiment": "neutral",
+        "keywords": [
+          "sobrang",
+          "ganda",
+          "magturo"
+        ]
+      }
+    ],
+    "data_quality": {
+      "evaluations_with_missing_responses": [],
+      "duplicated_evaluation_ids": [],
+      "questions_with_missing_weight": [],
+      "low_sample_categories": [
+        "1",
+        "2",
+        "4"
+      ],
+      "low_sample_questions": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ]
+    }
+  },
+  "chart_datasets": {
+    "category_bar": [
+      {
+        "label": "Commitment",
+        "value": 1.3333333333333333
+      },
+      {
+        "label": "Knowledge of Subject",
+        "value": 2
+      },
+      {
+        "label": "Teaching for Independent Learning",
+        "value": 2.1666666666666665
+      },
+      {
+        "label": "Management for Learning",
+        "value": 2.6666666666666665
+      }
+    ],
+    "trend_line": [
+      {
+        "label": "Fall 2025",
+        "value": 2.066666666666667
+      }
+    ],
+    "detailed_table": [
+      {
+        "question_id": "1",
+        "text": "asdfghjkl;'",
+        "avg_rating": 1.3333333333333333,
+        "stddev": 0.5773502691896257,
+        "responses": 3,
+        "pct_below_3": 100,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "2",
+        "text": "asdfghjkl",
+        "avg_rating": 2,
+        "stddev": 1,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "3",
+        "text": "sdfghjkl;l",
+        "avg_rating": 2.3333333333333335,
+        "stddev": 1.5275252316519468,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      },
+      {
+        "question_id": "4",
+        "text": "sdfghjkl;",
+        "avg_rating": 2.6666666666666665,
+        "stddev": 2.0816659994661326,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 33.333333333333336
+      },
+      {
+        "question_id": "5",
+        "text": "dfrghjkl;",
+        "avg_rating": 2,
+        "stddev": 1.7320508075688772,
+        "responses": 3,
+        "pct_below_3": 66.66666666666667,
+        "pct_ge_4_5": 0
+      }
+    ]
+  }
+}

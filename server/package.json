@@ -15,6 +15,7 @@
     "db:migrate:evaluation-responses": "node scripts/migrate-evaluation-responses.js",
     "db:backfill:students": "node scripts/backfill-students.js",
     "test": "cross-env NODE_ENV=test jest --runInBand",
+    "analytics:professor": "node scripts/professor-analytics.js",
     "test:coverage": "cross-env NODE_ENV=test jest --coverage --runInBand"
   },
   "dependencies": {

@@ -56,6 +56,11 @@ const validateChangePassword = [
 router.post('/signup', validateSignup, authController.signup);
 router.post('/login', validateLogin, authController.login);
 
+// Public ping to confirm router mount
+router.get('/ping', (req, res) => {
+  res.status(200).json({ status: 'ok', route: '/api/v1/auth/ping' });
+});
+
 // Protected routes (require authentication)
 router.use(authMiddleware.protect);
 

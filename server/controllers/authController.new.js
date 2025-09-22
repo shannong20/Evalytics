@@ -296,7 +296,17 @@ const login = async (req, res) => {
  */
 const getProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // From JWT middleware
+    // authMiddleware attaches the full DB row as req.user (snake_case fields)
+    // Normalize id from either user_id (DB) or id (if middleware ever changes)
+    const userId = req.user?.user_id || req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'You are not logged in! Please log in to get access.'
+      });
+    }
+
     const user = await userService.findUserById(userId);
     
     if (!user) {
