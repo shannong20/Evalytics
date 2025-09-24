@@ -49,7 +49,11 @@ module.exports = {
       const params = [];
       if (category && String(category).trim() !== '') {
         params.push(String(category).trim());
-        sql += ' WHERE LOWER(c.name) = LOWER($1)';
+        sql += ' WHERE LOWER(c.name) = LOWER($1) AND q.is_active = TRUE';
+      }
+      if (!(category && String(category).trim() !== '')) {
+        // No category filter; still show only active
+        sql += ' WHERE q.is_active = TRUE';
       }
       sql += ' ORDER BY c.category_id ASC, q.question_id ASC';
       const { rows } = await query(sql, params);
@@ -134,9 +138,13 @@ module.exports = {
       if (!Number.isInteger(questionId) || questionId <= 0) {
         return res.status(400).json({ status: 'error', message: "Path parameter 'id' must be a positive integer" });
       }
-      const { rowCount } = await query('DELETE FROM question WHERE question_id=$1', [questionId]);
+      // Soft delete: mark as inactive instead of deleting (avoids FK violations against response)
+      const { rowCount } = await query(
+        'UPDATE question SET is_active = FALSE, updated_at = NOW() WHERE question_id = $1 AND is_active = TRUE',
+        [questionId]
+      );
       if (rowCount === 0) {
-        return res.status(404).json({ status: 'error', message: 'Question not found' });
+        return res.status(404).json({ status: 'error', message: 'Question not found or already inactive' });
       }
       return res.status(204).send();
     } catch (error) {
@@ -160,7 +168,7 @@ module.exports = {
         const { rows: r } = await query(
           `SELECT q.question_id::text AS question_id, q.category_id, c.name AS category, q.text AS question_text, q.weight
            FROM question q JOIN category c ON c.category_id=q.category_id
-           WHERE q.form_id=$1
+           WHERE q.form_id=$1 AND q.is_active=TRUE
            ORDER BY c.category_id ASC, q.question_id ASC`,
            [formId]
         );
@@ -169,6 +177,7 @@ module.exports = {
         const { rows: r } = await query(
           `SELECT q.question_id::text AS question_id, q.category_id, c.name AS category, q.text AS question_text, q.weight
            FROM question q JOIN category c ON c.category_id=q.category_id
+           WHERE q.is_active=TRUE
            ORDER BY c.category_id ASC, q.question_id ASC`
         );
         rows = r;
@@ -186,6 +195,7 @@ module.exports = {
       const { rows } = await query(
         `SELECT q.question_id::text AS question_id, q.category_id, c.name AS category, q.text AS question_text, q.weight
          FROM question q JOIN category c ON c.category_id=q.category_id
+         WHERE q.is_active = TRUE
          ORDER BY c.category_id ASC, q.question_id ASC`
       );
       return res.status(200).json(rows);

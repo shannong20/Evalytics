@@ -10,10 +10,15 @@ import { buildApiUrl } from '../../lib/api';
 // Departments are loaded dynamically from the backend
 type DepartmentItem = { department_id: string; name: string };
 type FacultyItem = { id: string; full_name: string; email?: string | null };
+type FormItem = { form_id: number; title: string; school_year: string; semester: string; start_date: string; end_date: string };
 
 export default function FacultyEvaluationFlow() {
   const { token } = useAuth();
-  const [step, setStep] = useState(1 as 1 | 2 | 3);
+  const [step, setStep] = useState(1 as 1 | 2 | 3 | 4);
+  const [formId, setFormId] = useState<number | null>(null);
+  const [forms, setForms] = useState<FormItem[]>([]);
+  const [loadingForms, setLoadingForms] = useState(false);
+  const [formsError, setFormsError] = useState<string | null>(null);
   const [departmentId, setDepartmentId] = useState('');
   const [department, setDepartment] = useState('');
   const [departments, setDepartments] = useState([] as DepartmentItem[]);
@@ -24,6 +29,34 @@ export default function FacultyEvaluationFlow() {
   const [facultyOptions, setFacultyOptions] = useState([] as FacultyItem[]);
   const [loadingFaculty, setLoadingFaculty] = useState(false);
   const [facultyError, setFacultyError] = useState(null as string | null);
+
+  // Load active evaluation forms first
+  useEffect(() => {
+    let ignore = false;
+    async function loadForms() {
+      setFormsError(null);
+      setLoadingForms(true);
+      try {
+        const res = await fetch(buildApiUrl('/api/v1/forms?active=true'));
+        const data = await res.json().catch(() => ({}));
+        if (ignore) return;
+        if (!res.ok) {
+          const msg = (data && ((data as any).message || (data as any).error?.message)) || 'Failed to load forms';
+          setFormsError(msg);
+          return;
+        }
+        const list: FormItem[] = Array.isArray((data as any)?.data) ? (data as any).data : [];
+        setForms(list);
+        setFormId(list.length ? Number(list[0].form_id) : null);
+      } catch (_e) {
+        if (!ignore) setFormsError('Network error while loading forms');
+      } finally {
+        if (!ignore) setLoadingForms(false);
+      }
+    }
+    loadForms();
+    return () => { ignore = true; };
+  }, []);
 
   // Load departments on mount
   useEffect(() => {
@@ -120,6 +153,7 @@ export default function FacultyEvaluationFlow() {
     return () => { ignore = true; };
   }, [departmentId, token]);
 
+  const canNextFromForm = formId != null;
   const canNextFromDept = !!departmentId;
   const canNextFromFaculty = !!facultyId;
 
@@ -131,28 +165,71 @@ export default function FacultyEvaluationFlow() {
       </div>
 
       {/* Stepper Header */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <Card className={step >= 1 ? 'border-blue-200' : ''}>
           <CardHeader>
-            <CardTitle className="text-base">Step 1: Department</CardTitle>
-            <CardDescription>Select a department</CardDescription>
+            <CardTitle className="text-base">Step 1: Evaluation Form</CardTitle>
+            <CardDescription>Select an active form</CardDescription>
           </CardHeader>
         </Card>
         <Card className={step >= 2 ? 'border-blue-200' : ''}>
           <CardHeader>
-            <CardTitle className="text-base">Step 2: Faculty</CardTitle>
-            <CardDescription>Choose a faculty member</CardDescription>
+            <CardTitle className="text-base">Step 2: Department</CardTitle>
+            <CardDescription>Select a department</CardDescription>
           </CardHeader>
         </Card>
         <Card className={step >= 3 ? 'border-blue-200' : ''}>
           <CardHeader>
-            <CardTitle className="text-base">Step 3: Evaluate</CardTitle>
+            <CardTitle className="text-base">Step 3: Faculty</CardTitle>
+            <CardDescription>Choose a faculty member</CardDescription>
+          </CardHeader>
+        </Card>
+        <Card className={step >= 4 ? 'border-blue-200' : ''}>
+          <CardHeader>
+            <CardTitle className="text-base">Step 4: Evaluate</CardTitle>
             <CardDescription>Complete the existing form</CardDescription>
           </CardHeader>
         </Card>
       </div>
 
+      {/* Step 1: Form */}
       {step === 1 && (
+        <Card className="border-0 shadow-md">
+          <CardHeader>
+            <CardTitle>Select Evaluation Form</CardTitle>
+            <CardDescription>Choose from active forms</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="max-w-md">
+              <Select
+                value={formId != null ? String(formId) : ''}
+                onValueChange={(id) => setFormId(Number(id))}
+                disabled={loadingForms || !!formsError}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingForms ? 'Loading forms...' : (formsError ? 'Failed to load forms' : (forms.length ? 'Select a form' : 'No active forms'))} />
+                </SelectTrigger>
+                <SelectContent>
+                  {forms.map((f) => (
+                    <SelectItem key={String(f.form_id)} value={String(f.form_id)}>
+                      {f.title} ({f.school_year} {f.semester})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formsError && (
+                <p className="text-sm text-red-600 mt-2">{formsError}</p>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <Button onClick={() => setStep(2)} disabled={!canNextFromForm} className="min-w-32">Next</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 2: Department */}
+      {step === 2 && (
         <Card className="border-0 shadow-md">
           <CardHeader>
             <CardTitle>Choose Department</CardTitle>
@@ -191,13 +268,14 @@ export default function FacultyEvaluationFlow() {
               )}
             </div>
             <div className="mt-6 flex justify-end">
-              <Button onClick={() => setStep(2)} disabled={!canNextFromDept} className="min-w-32">Next</Button>
+              <Button onClick={() => setStep(3)} disabled={!canNextFromDept} className="min-w-32">Next</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {step === 2 && (
+      {/* Step 3: Faculty */}
+      {step === 3 && (
         <Card className="border-0 shadow-md">
           <CardHeader>
             <CardTitle>Select Faculty</CardTitle>
@@ -239,17 +317,21 @@ export default function FacultyEvaluationFlow() {
               )}
             </div>
             <div className="mt-6 flex justify-between">
-              <Button variant="secondary" onClick={() => setStep(1)}>Back</Button>
-              <Button onClick={() => setStep(3)} disabled={!canNextFromFaculty} className="min-w-32">Next</Button>
+              <Button variant="secondary" onClick={() => setStep(2)}>Back</Button>
+              <Button onClick={() => setStep(4)} disabled={!canNextFromFaculty} className="min-w-32">Next</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {step === 3 && (
+      {/* Step 4: Evaluate */}
+      {step === 4 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-600">
+              <span className="mr-2">Form:</span>
+              <span className="font-medium">{forms.find(f => f.form_id === formId)?.title || ''}</span>
+              <Separator orientation="vertical" className="mx-3 h-4" />
               <span className="mr-2">Department:</span>
               <span className="font-medium">{department}</span>
               <Separator orientation="vertical" className="mx-3 h-4" />
@@ -257,8 +339,9 @@ export default function FacultyEvaluationFlow() {
               <span className="font-medium">{facultyName}</span>
             </div>
             <div className="space-x-2">
-              <Button variant="secondary" onClick={() => setStep(2)}>Change Faculty</Button>
-              <Button variant="outline" onClick={() => setStep(1)}>Change Department</Button>
+              <Button variant="secondary" onClick={() => setStep(3)}>Change Faculty</Button>
+              <Button variant="outline" onClick={() => setStep(2)}>Change Department</Button>
+              <Button variant="outline" onClick={() => setStep(1)}>Change Form</Button>
             </div>
           </div>
 
@@ -269,9 +352,11 @@ export default function FacultyEvaluationFlow() {
             department={department}
             prefilledFacultyId={facultyId}
             lockFacultySelection
+            formId={formId ?? undefined}
           />
         </div>
       )}
     </div>
   );
 }
+

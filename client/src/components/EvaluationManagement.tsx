@@ -3,7 +3,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -29,8 +28,13 @@ const sampleEvaluations = [
 export default function EvaluationManagement() {
   const { token } = useAuth();
   const [activeTab, setActiveTab] = useState('list');
-  const [startDate, setStartDate] = useState();
-  const [endDate, setEndDate] = useState();
+  const [startDate, setStartDate] = useState<Date | undefined>();
+  const [endDate, setEndDate] = useState<Date | undefined>();
+  const [title, setTitle] = useState('');
+  const [schoolYear, setSchoolYear] = useState('');
+  const [semester, setSemester] = useState('');
+  const [isActive, setIsActive] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [questionOpen, setQuestionOpen] = useState(false);
   const [questions, setQuestions] = useState([] as QuestionRecord[]);
   const [qLoading, setQLoading] = useState(false);
@@ -255,31 +259,34 @@ export default function EvaluationManagement() {
                     id="title"
                     placeholder="Enter evaluation title"
                     className="border-gray-200 focus:border-blue-500"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="type">Evaluation Type</Label>
-                  <Select>
-                    <SelectTrigger className="border-gray-200 focus:border-blue-500">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="faculty">Faculty Performance</SelectItem>
-                      <SelectItem value="staff">Staff Annual Review</SelectItem>
-                      <SelectItem value="course">Course Evaluation</SelectItem>
-                      <SelectItem value="leadership">Leadership Assessment</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="semester">Semester</Label>
+                  <Input
+                    id="semester"
+                    placeholder="e.g., 1st"
+                    className="border-gray-200 focus:border-blue-500"
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                  />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Enter evaluation description"
-                  className="border-gray-200 focus:border-blue-500"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="school_year">School Year</Label>
+                  <Input
+                    id="school_year"
+                    placeholder="e.g., 2024-2025"
+                    className="border-gray-200 focus:border-blue-500"
+                    value={schoolYear}
+                    onChange={(e) => setSchoolYear(e.target.value)}
+                  />
+                </div>
+                {/* Right column intentionally left for future fields */}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -323,13 +330,66 @@ export default function EvaluationManagement() {
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" className="border-gray-200 text-gray-600">
-                  Save as Draft
-                </Button>
-                <Button className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white border-0">
-                  Create Evaluation
-                </Button>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <input id="active" type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+                  <Label htmlFor="active">Active</Label>
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button
+                    variant="outline"
+                    className="border-gray-200 text-gray-600"
+                    onClick={() => {
+                      setTitle(''); setSchoolYear(''); setSemester(''); setStartDate(undefined); setEndDate(undefined); setIsActive(false);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    disabled={creating}
+                    onClick={async () => {
+                      try {
+                        if (!title.trim()) { toast.error('Title is required'); return; }
+                        if (!/^[0-9]{4}-[0-9]{4}$/.test(schoolYear.trim())) { toast.error('School year must be YYYY-YYYY'); return; }
+                        if (!startDate || !endDate) { toast.error('Start and end dates are required'); return; }
+                        if (startDate.getTime() > endDate.getTime()) { toast.error('Start date must be before or equal to end date'); return; }
+                        setCreating(true);
+                        const baseUrl = (import.meta as any).env?.VITE_SERVER_URL || 'http://localhost:5000';
+                        const payload: any = {
+                          title: title.trim(),
+                          school_year: schoolYear.trim(),
+                          semester: semester.trim() || null,
+                          start_date: format(startDate, 'yyyy-MM-dd'),
+                          end_date: format(endDate, 'yyyy-MM-dd'),
+                          is_active: !!isActive,
+                        };
+                        const res = await fetch(`${baseUrl}/api/v1/forms`, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                          },
+                          body: JSON.stringify(payload),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          const msg = (data && ((data as any).message || (data as any).error?.message)) || 'Failed to create form';
+                          throw new Error(msg);
+                        }
+                        toast.success('Form created');
+                        setActiveTab('list');
+                      } catch (e: any) {
+                        console.error(e);
+                        toast.error(e?.message || 'Failed to create form');
+                      } finally {
+                        setCreating(false);
+                      }
+                    }}
+                    className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white border-0"
+                  >
+                    {creating ? 'Creating…' : 'Create Evaluation'}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -410,7 +470,7 @@ export default function EvaluationManagement() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_text">Question Text</Label>
-                  <Textarea
+                  <Input
                     id="edit_text"
                     value={editValues.text}
                     onChange={(e) => setEditValues((p) => ({ ...p, text: e.target.value }))}

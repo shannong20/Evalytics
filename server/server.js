@@ -13,6 +13,7 @@ const coursesRoutes = require('./routes/courses');
 const reportsRoutes = require('./routes/reports');
 const departmentsRoutes = require('./routes/departments');
 const categoriesRoutes = require('./routes/categories');
+const formsRoutes = require('./routes/forms.new');
 
 // Import middleware
 const { isLoggedIn } = require('./middleware/authMiddleware');
@@ -79,6 +80,7 @@ app.use(`${API_PREFIX}/courses`, coursesRoutes);
 app.use(`${API_PREFIX}/reports`, reportsRoutes);
 app.use(`${API_PREFIX}/departments`, departmentsRoutes);
 app.use(`${API_PREFIX}/categories`, categoriesRoutes);
+app.use(`${API_PREFIX}/forms`, formsRoutes);
 
 // Health check endpoint
 app.get(`${API_PREFIX}/health`, (req, res) => {

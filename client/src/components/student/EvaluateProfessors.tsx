@@ -24,11 +24,14 @@ type EvaluateProfessorsProps = {
   department?: string;
   prefilledFacultyId?: number | string;
   lockFacultySelection?: boolean;
+  formId?: number;
 };
 
-export default function EvaluateProfessors({ prefilledProfessorName, lockProfessorName = false, department, prefilledFacultyId, lockFacultySelection = false }: EvaluateProfessorsProps) {
-  // TODO: Make this dynamic or configurable via admin
-  const FORM_ID = Number(((import.meta as any).env?.VITE_EVALUATION_FORM_ID)) || 1;
+export default function EvaluateProfessors({ prefilledProfessorName, lockProfessorName = false, department, prefilledFacultyId, lockFacultySelection = false, formId }: EvaluateProfessorsProps) {
+  // Use provided formId from parent (preferred). Fallback to env var if not provided.
+  const FORM_ID = typeof formId === 'number' && Number.isFinite(formId)
+    ? Number(formId)
+    : (Number(((import.meta as any).env?.VITE_EVALUATION_FORM_ID)) || 1);
   const { user, token } = useAuth();
   const [facultyId, setFacultyId] = useState(null as number | null);
   const [facultyList, setFacultyList] = useState([] as Faculty[]);
@@ -241,6 +244,7 @@ export default function EvaluateProfessors({ prefilledProfessorName, lockProfess
           evaluatee_id: Number(facultyId),
           course_id: Number(courseId),
           responses: responsesStructured,
+          form_id: FORM_ID,
           comments: String(comments || '').trim() || undefined,
         };
         console.log('Submitting payload (structured):', JSON.stringify(payload, null, 2));

@@ -15,7 +15,7 @@ const submitEvaluation = async (req, res) => {
 
   // The evaluator is the currently authenticated user
   const evaluator_id = req.user.user_id;
-  const { evaluatee_id, course_id, responses } = req.body;
+  const { evaluatee_id, course_id, responses, form_id } = req.body;
 
   try {
     const result = await evaluationService.submitEvaluation({
@@ -23,6 +23,7 @@ const submitEvaluation = async (req, res) => {
       evaluatee_id,
       course_id,
       responses,
+      form_id,
       comments: req.body.comments,
     });
 

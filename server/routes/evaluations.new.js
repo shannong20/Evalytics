@@ -15,6 +15,9 @@ const submissionValidationRules = [
   body('course_id')
     .isInt({ gt: 0 })
     .withMessage('A valid course_id is required.'),
+  body('form_id')
+    .isInt({ gt: 0 })
+    .withMessage('A valid form_id is required.'),
   body('responses')
     .isArray({ min: 1 })
     .withMessage('The `responses` array must not be empty.'),
